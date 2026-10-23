@@ -9,8 +9,8 @@ Mudit is enabling the model in parallel (`docs/BEDROCK.md`); you need the model 
 ```bash
 cd /workshop
 git clone https://github.com/MuditUpadhyay04/AI-Agentic-Hack.git && cd AI-Agentic-Hack
-pip install -r requirements.txt
-python scripts/run_sourcing.py            # offline sanity check: ends with PO-7711 ... Vendor C, $492
+pip3 install -r requirements-agent.txt     # agent only: shiny fails to build on the workshop ARM box
+python3 scripts/run_sourcing.py            # offline sanity check: ends with PO-7711 ... Vendor C, $492
 ```
 
 ## 2. Deploy to AgentCore (8–10 min)
@@ -19,9 +19,9 @@ If the workshop kit has its own deploy script, use it with **`agentcore/agent.py
 Otherwise, the AgentCore starter toolkit:
 
 ```bash
-pip install bedrock-agentcore-starter-toolkit
+pip3 install bedrock-agentcore-starter-toolkit
 agentcore configure --entrypoint agentcore/agent.py --name pitcrew \
-  --requirements-file requirements.txt --region "$AWS_REGION"
+  --requirements-file requirements-agent.txt --region "$AWS_REGION"
 #   accept the defaults: create execution role, create ECR repo, no OAuth
 agentcore launch \
   --env PITCREW_LLM=bedrock \
@@ -42,7 +42,7 @@ AccessDenied on the model, add those two actions to the role in IAM.
 ```bash
 agentcore invoke '{"action": "sourcing"}'
 # or, from anywhere with credentials:
-python scripts/invoke_agentcore.py --arn <runtime ARN> --action sourcing
+python3 scripts/invoke_agentcore.py --arn <runtime ARN> --action sourcing
 ```
 
 Success = `[Sourcing] ...` turns in the model's words, ending with PO-7711 to Vendor C ($492).
