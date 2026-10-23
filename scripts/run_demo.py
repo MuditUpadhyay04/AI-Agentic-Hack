@@ -1,4 +1,4 @@
-"""The whole demo in the terminal: Run (mill, tower), Improve, Grow. Good for rehearsal and as a backup.
+"""The demo in the terminal: mill crew, Prevention (Matthew's failure model), Sourcing, Grow.
 
     python scripts/run_demo.py                    # offline crew
     PITCREW_LLM=bedrock python scripts/run_demo.py  # Strands agents on Bedrock (workshop account)
@@ -14,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from pitcrew.contracts import Plant  # noqa: E402
 from pitcrew.crew import Crew  # noqa: E402
 from pitcrew.world import World, _clean  # noqa: E402
 
@@ -28,33 +29,31 @@ def show(title: str, turns: list[dict]) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--tower", type=int, default=7)
     ap.add_argument("--json", default=None)
     a = ap.parse_args()
     w = World()
     crew = Crew(w)
-    out = {}
     p = crew.plan_mill()
     show(f"RUN · mill VM-07 (crew: {crew.mode})", p["turns"])
     e = crew.execute(p)
     show("RUN · mill VM-07 after Approve", e["turns"])
-    t = crew.plan_tower(a.tower)
-    show(f"RUN · tower {a.tower}", t["turns"])
-    te = crew.execute(t) if t.get("recommendation") else {"turns": []}
-    show(f"RUN · tower {a.tower} after Approve", te["turns"])
-    k = crew.improve()
-    show("IMPROVE · Kaizen", k["turns"])
-    for item in k["dcr"]["items"]:
-        print(f"  - {item['id']} {item['area']}: {item['change']}\n      {item['evidence']}")
+
+    plant = Plant()
+    print("\n=== PREVENTION · Matthew's failure model " + "=" * 30)
+    for pid, r in plant.prevention().items():
+        print(f"  {plant.products[pid]['name']:<18} risk {r['risk']:>6.1%}  {r['action']}")
+    plant.product_drifts("DS-07")
+    r = plant.prevention()["DS-07"]
+    job = next(j for j in plant.queue()["jobs"] if j["product"] == "DS-07")
+    print(f"  Dicing saw 07 drifts: risk {r['risk']:.1%} -> {r['action']}; {job['job_id']} now rank {job['rank']} "
+          f"({job['reason']})")
+
+    s = crew.sourcing()
+    show("SUPPLY · Sourcing agent", s["turns"])
     g = crew.grow("lathe_l2_manual.md")
     show("GROW · Onboarder", g["turns"])
-    w.onboard_manual("tower_drive_manual.md")
-    w.install_slot("ST-1", "acoustic")
-    t42 = crew.plan_tower(42)
-    show("GROW · acoustic slot installed, tower 42", t42["turns"])
-    out = {"mill": p, "mill_exec": e, "tower": t, "tower_exec": te, "improve": k, "grow": g, "tower42": t42,
-           "trace": w.trace}
     if a.json:
+        out = {"mill": p, "mill_exec": e, "prevention": r, "sourcing": s, "grow": g, "trace": w.trace}
         Path(a.json).write_text(json.dumps(_clean(out), indent=1, default=str))
         print(f"\nsaved {a.json}")
 

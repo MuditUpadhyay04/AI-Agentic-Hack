@@ -64,7 +64,7 @@ python3 scripts/invoke_agentcore.py --arn <runtime ARN> --action sourcing
 ```
 
 Success = `[Sourcing] ...` turns in the model's words, ending with PO-7711 to Vendor C ($492).
-Other actions on the same runtime: `plan_mill`, `plan_tower` (with `"tower_id": 7`), `improve`, `grow`.
+Other actions on the same runtime: `predict` (Matthew's failure model, `{"action": "predict", "udi": 162}`), `plan_mill`, `approve`, `grow`.
 
 ## 4. For the demo (1 min)
 

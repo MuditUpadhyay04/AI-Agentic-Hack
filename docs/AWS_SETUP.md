@@ -14,7 +14,7 @@ pip install -r requirements.txt
 python -m pytest -q                       # 32 passed
 curl -fsSL https://atx.rahman.dev/hackathon-kit.zip -o hackathon-kit.zip && unzip -qo hackathon-kit.zip
 python infer.py                           # the kit's Bedrock smoke test: note which model id works
-python scripts/fetch_data.py              # real AI4I file + DFW wind
+python scripts/fetch_data.py              # real AI4I file
 ```
 
 ## 2 · Run the console on Bedrock (10 min)
@@ -36,7 +36,7 @@ the entrypoint instead of the kit's `agent.py`, with environment `PITCREW_LLM=be
 `PITCREW_MODEL_ID`. Then:
 
 ```bash
-python scripts/invoke_agentcore.py --arn <runtime ARN> --action plan_tower --tower 7
+python scripts/invoke_agentcore.py --arn <runtime ARN> --action sourcing
 ```
 
 Show the invocation trace in CloudWatch (AgentCore observability) during the "Proof" beat.

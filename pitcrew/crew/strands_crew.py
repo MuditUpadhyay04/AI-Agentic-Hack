@@ -2,7 +2,7 @@
 
 Plan graph (before the human):   Sentinel -> Diagnostician -> Race Engineer
 Execute graph (after Approve):   Quartermaster -> Dispatcher
-Improve: Kaizen.  Grow: Onboarder.
+Supply: Sourcing.  Grow: Onboarder.
 
 Every number comes from a tool (the same ``World`` tools the offline crew uses), and the approval card is
 built from the tool results in the trace, not from model text, so the model can explain and choose but
@@ -38,8 +38,6 @@ PROMPTS = {
                      "arrives in time (not simply the cheapest). Report what you did. " + RULES,
     "Dispatcher": "You are the Dispatcher (Execute, people). Book the work on the next route or shift change "
                   "with the evidence attached, and batch other flagged assets on the same visit. " + RULES,
-    "Kaizen": "You are the Kaizen agent (Improve). Use your tools to find rules, supplier patterns and the "
-              "hardware worth adding; draft the design-change request. " + RULES,
     "Onboarder": "You are the Onboarder (Grow). Read the manual into a passport, report its walls, live "
                  "signals and future hardware slots, and ask a human to sign. " + RULES,
     "Sourcing": "You are the Sourcing agent (Supply). Every job in the priority queue names a part number and a "
@@ -71,28 +69,13 @@ def tools_for(w: World) -> dict:
 
     @tool
     def search_manual(query: str, manual: str = "vm07_mill_manual.md") -> dict:
-        """Search an equipment manual (vm07_mill_manual.md or tower_drive_manual.md) for lines about query."""
+        """Search an equipment manual (vm07_mill_manual.md or lathe_l2_manual.md) for lines about query."""
         return w.search_manual(query, manual)
 
     @tool
     def price_mill_options() -> dict:
         """Price run-as-is, stop-now and Lift & Coast for mill VM-07; returns options and the cheapest safe one."""
         return w.price_mill_options()
-
-    @tool
-    def fleet_overview() -> dict:
-        """Which solar towers are flagged today, by which sensor."""
-        return w.fleet_overview()
-
-    @tool
-    def diagnose_tower(tower_id: int) -> dict:
-        """Detector findings and remaining-life estimate for one tower."""
-        return w.diagnose_tower(tower_id)
-
-    @tool
-    def price_tower_options(tower_id: int) -> dict:
-        """Park & Price: keep tracking, coast, park or emergency visit, each with failure risk, energy and cost."""
-        return w.price_tower_options(tower_id)
 
     @tool
     def check_stock(pn: str) -> dict:
@@ -115,7 +98,7 @@ def tools_for(w: World) -> dict:
         return w.draft_po(pn, qty, supplier, unit_usd, lead_days, extra_usd)
 
     @tool
-    def next_route_day(base: str = "DFW") -> dict:
+    def next_route_day(base: str = "Field") -> dict:
         """The next batched technician route day and its technician."""
         return w.next_route_day(base)
 
@@ -125,29 +108,10 @@ def tools_for(w: World) -> dict:
         return w.create_work_order(asset, title, due, tech, parts, evidence)
 
     @tool
-    def kaizen_rules() -> dict:
-        """Search AI4I for the simplest rule per failure mode, with precision and recall."""
-        return w.kaizen_rules()
-
-    @tool
-    def kaizen_lots() -> dict:
-        """Failure rate per tower-year by drive supplier lot, and days from fresh grease to the friction alarm."""
-        return w.kaizen_lots()
-
-    @tool
-    def tracking_tradeoff() -> dict:
-        """Energy given up by step tracking (field energy model) vs drive starts saved."""
-        return w.tracking_tradeoff()
-
-    @tool
-    def sensor_futures() -> dict:
-        """Replay past failures with each future hardware slot added; value per tower-year and payback."""
-        return w.sensor_futures()
-
-    @tool
-    def design_change_request() -> dict:
-        """Draft the ST-2 design-change request from the fleet evidence."""
-        return w.design_change_request()
+    def predict_failure(record_udi: int) -> dict:
+        """Matthew's failure model: failure probability (act >= 0.70, watch >= 0.40) of one equipment reading
+        (an AI4I 2020 record id), with each sensor compared with healthy peers of the same type."""
+        return w.predict_failure(record_udi)
 
     @tool
     def onboard_manual(manual: str) -> dict:
@@ -185,12 +149,11 @@ def tools_for(w: World) -> dict:
         return w.place_order(pn, vendor, qty)
 
     return {
-        "Sentinel": [read_mill, fleet_overview],
-        "Diagnostician": [search_manual, diagnose_tower],
-        "Race Engineer": [price_mill_options, price_tower_options],
+        "Sentinel": [read_mill, predict_failure],
+        "Diagnostician": [search_manual],
+        "Race Engineer": [price_mill_options],
         "Quartermaster": [check_stock, reserve_part, request_quotes, draft_po],
         "Dispatcher": [next_route_day, create_work_order],
-        "Kaizen": [kaizen_rules, kaizen_lots, tracking_tradeoff, sensor_futures, design_change_request],
         "Onboarder": [onboard_manual],
         "Sourcing": [job_queue, hub_stock, fulfil_job, restock_local_hubs, plan_central_order, place_order],
     }
@@ -251,17 +214,10 @@ def plan(w: World, task: str, kind: str, model=None) -> dict:
     start = len(w.trace)
     res = _graph(agents, names)(task)
     out = {"turns": _turns(w, res, names, start), "needs_approval": True}
-    if kind == "mill":
-        p = _last(w, "price_mill_options") or w.price_mill_options()
-        out.update(asset="VM-07", options=p["options"],
-                   recommendation=next(o for o in p["options"] if o["key"] == p["recommendation"]),
-                   assumptions=p["assumptions"])
-    else:
-        p = _last(w, "price_tower_options")
-        out.update(asset=f"Tower {p['tower_id']}", tower_id=p["tower_id"], options=p["options"],
-                   recommendation=p["recommendation"], fix=p["fix"], route=p["route"],
-                   visit_in_days=p["visit_in_days"], energy=p["energy"], failure_cost_usd=p["failure_cost_usd"],
-                   economics=p["economics"], flagged=(_last(w, "fleet_overview") or {}).get("flagged", []))
+    p = _last(w, "price_mill_options") or w.price_mill_options()
+    out.update(asset="VM-07", options=p["options"],
+               recommendation=next(o for o in p["options"] if o["key"] == p["recommendation"]),
+               assumptions=p["assumptions"])
     return out
 
 
@@ -273,8 +229,6 @@ def execute(w: World, plan_out: dict, who: str = "Foreman", model=None) -> dict:
     w.agent = "Foreman"
     if plan_out["asset"] == "VM-07" and rec["key"] == "lift_and_coast":
         w.write_mill_setpoint(rec["rpm"], rec["torque"], approved_by=who)
-    elif plan_out.get("tower_id") and rec["key"] in ("park", "coast"):
-        w.set_tower_mode(plan_out["tower_id"], rec["key"], approved_by=who)
     names = ["Quartermaster", "Dispatcher"]
     start = len(w.trace)
     task = ("The foreman approved this plan. Carry it out.\n" + json.dumps(

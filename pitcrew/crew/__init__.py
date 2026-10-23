@@ -60,32 +60,11 @@ class Crew:
         # Comms tells the floor as soon as the Sentinel's numbers change; the message uses tool numbers only.
         return offline.mill_alert(self.w)
 
-    def plan_tower(self, tid: int = 7) -> dict:
-        from . import strands_crew as S
-
-        return self._try(lambda: S.plan(self.w, f"Solar tower fleet: check today's flags and plan for Tower {tid}.",
-                                        "tower", self._model()),
-                         lambda: offline.tower_plan(self.w, tid))
-
     def execute(self, plan: dict, who: str = "Foreman") -> dict:
         from . import strands_crew as S
 
-        off = (lambda: offline.mill_execute(self.w, plan, who)) if plan["asset"] == "VM-07" else \
-            (lambda: offline.tower_execute(self.w, plan, who))
-        return self._try(lambda: S.execute(self.w, plan, who, self._model()), off)
-
-    # ---- Improve / Grow (the numbers come from tools either way; the offline narration is the default)
-    def improve(self) -> dict:
-        from . import strands_crew as S
-
-        base = offline.improve(self.w)
-        if self.mode == "offline":
-            return base
-        extra = self._try(lambda: S.single(self.w, "Kaizen", "Review the fleet history and draft the ST-2 "
-                                                               "design-change request.", self._model()),
-                          lambda: {"turns": []})
-        base["turns"] = extra.get("turns", []) + base["turns"]
-        return base
+        return self._try(lambda: S.execute(self.w, plan, who, self._model()),
+                         lambda: offline.mill_execute(self.w, plan, who))
 
     # ---- Supply
     def sourcing(self) -> dict:
@@ -93,6 +72,7 @@ class Crew:
 
         return self._try(lambda: S.sourcing(self.w, self._model()), lambda: offline.sourcing(self.w))
 
+    # ---- Grow
     def grow(self, manual: str) -> dict:
         return offline.grow(self.w, manual)
 

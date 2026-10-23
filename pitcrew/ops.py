@@ -71,8 +71,7 @@ class PurchaseOrder:
 # --------------------------------------------------------------------------- policy
 POLICY = {
     "po_auto_approve_usd": 500.0,
-    "setpoint_change_needs_human": True,  # derate, park, change stow wind: always the foreman
-    "park_autonomous_max_kwh_per_day": 0.0,  # 0 = never park without a human (raise to allow small autonomic moves)
+    "setpoint_change_needs_human": True,  # derate or any change to how a machine runs: always the foreman
     "min_margin_at_window": 0.08,  # Lift & Coast keeps at least 8% headroom to every wall
 }
 
@@ -96,9 +95,8 @@ def policy_check(action: str, **kw) -> dict:
         ok = kw.get("total_usd", 0) <= POLICY["po_auto_approve_usd"]
         return {"allowed": ok, "needs_human": not ok,
                 "rule": f"POs up to ${POLICY['po_auto_approve_usd']:.0f} auto-approve; above that the foreman approves"}
-    if action in ("write_setpoint", "park_tower", "change_stow_wind"):
-        lost = kw.get("kwh_per_day_lost", 1e9)
-        auto = lost <= POLICY["park_autonomous_max_kwh_per_day"] and not POLICY["setpoint_change_needs_human"]
+    if action == "write_setpoint":
+        auto = not POLICY["setpoint_change_needs_human"]
         return {"allowed": auto, "needs_human": not auto,
                 "rule": "Changing how a machine runs always needs the foreman (setpoint_change_needs_human)"}
     return {"allowed": True, "needs_human": False, "rule": "no rule"}
@@ -110,23 +108,12 @@ class Ops:
     def __init__(self):
         self.parts = {p.pn: p for p in [
             Part("INSERT-CNMG-L", "Carbide insert, L-grade steel", 42.0, 4, 4, 10, "Tooling Supply Co."),
-            Part("GREASE-KIT-SD", "Slew-drive re-grease kit (EP2 grease, fittings)", 40.0, 12, 6, 24, "DriveParts TX"),
-            Part("SEAL-KIT-SD", "Slew-drive seal kit", 65.0, 3, 4, 10, "DriveParts TX"),
-            Part("BOLT-KIT-SD", "Drive mounting bolt kit (M16)", 25.0, 9, 4, 10, "DriveParts TX"),
-            Part("DRIVE-WSD14", "Worm slew drive, 14 in class (ST-1)", 1200.0, 1, 2, 4, "Lot-A Supplier"),
         ]}
         self.quotes = {
-            "DRIVE-WSD14": [
-                Quote("Lot-A Supplier", "DRIVE-WSD14", 1200.0, 21, 180.0, 9, field_mtbf_years=11.0),
-                Quote("Lot-B Supplier", "DRIVE-WSD14", 1040.0, 14, 0.0, None, field_mtbf_years=3.2),
-                Quote("Lot-C Supplier", "DRIVE-WSD14", 1150.0, 28, 260.0, 12, field_mtbf_years=8.5),
-            ],
-            "SEAL-KIT-SD": [Quote("DriveParts TX", "SEAL-KIT-SD", 65.0, 3)],
-            "GREASE-KIT-SD": [Quote("DriveParts TX", "GREASE-KIT-SD", 40.0, 2)],
             "INSERT-CNMG-L": [Quote("Tooling Supply Co.", "INSERT-CNMG-L", 42.0, 2)],
         }
         self.techs = [
-            Technician("Rosa M.", "DFW", (3, 4), 400.0),  # batched route Thu/Fri; regional emergency $400
+            Technician("Field technician, North", "Field", (3, 4), 400.0),  # batched route Thu/Fri; emergency $400
             Technician("Setter, Cell 3", "Plant", (0, 1, 2, 3, 4), 0.0),
         ]
         self.work_orders: list[WorkOrder] = []
@@ -175,7 +162,7 @@ class Ops:
         return {**asdict(po), "policy": chk}
 
     # ---- people
-    def next_route_day(self, base: str = "DFW") -> dict:
+    def next_route_day(self, base: str = "Field") -> dict:
         t = next(x for x in self.techs if x.base == base)
         for k in range(1, 15):
             d = TODAY + dt.timedelta(days=k)

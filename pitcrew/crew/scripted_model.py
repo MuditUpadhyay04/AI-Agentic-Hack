@@ -8,32 +8,22 @@ missing when the workshop account plugs Bedrock in.
 from __future__ import annotations
 
 import json
-import re
 import uuid
 from typing import Any
 
 from strands.models.model import Model
 
 CALLS = {
-    "Sentinel": lambda task: [("read_mill", {})] if "VM-07" in task else [("fleet_overview", {})],
-    "Diagnostician": lambda task: ([("search_manual", {"query": "tool change insert wear shift"})] if "VM-07" in task
-                                   else [("diagnose_tower", {"tower_id": _tid(task)}),
-                                         ("search_manual", {"query": "re-grease seals",
-                                                            "manual": "tower_drive_manual.md"})]),
-    "Race Engineer": lambda task: ([("price_mill_options", {})] if "VM-07" in task
-                                   else [("price_tower_options", {"tower_id": _tid(task)})]),
-    "Quartermaster": lambda task: [("check_stock", {"pn": "INSERT-CNMG-L" if "VM-07" in task else "GREASE-KIT-SD"})],
+    "Sentinel": lambda task: [("read_mill", {}), ("predict_failure", {"record_udi": 162})],
+    "Diagnostician": lambda task: [("search_manual", {"query": "tool change insert wear shift"})],
+    "Race Engineer": lambda task: [("price_mill_options", {})],
+    "Quartermaster": lambda task: [("check_stock", {"pn": "INSERT-CNMG-L"})],
     "Dispatcher": lambda task: [("next_route_day", {})],
-    "Kaizen": lambda task: [("kaizen_lots", {}), ("tracking_tradeoff", {})],
     "Onboarder": lambda task: [("onboard_manual", {"manual": "lathe_l2_manual.md"})],
     "Sourcing": lambda task: [("job_queue", {}), ("fulfil_job", {"job_id": "CUR-007"}),
                               ("restock_local_hubs", {"pn": "PN-2210"}), ("plan_central_order", {"pn": "PN-2210"})],
 }
 
-
-def _tid(task: str) -> int:
-    m = re.search(r"[Tt]ower\s+(\d+)", task)
-    return int(m.group(1)) if m else 7
 
 
 class ScriptedModel(Model):

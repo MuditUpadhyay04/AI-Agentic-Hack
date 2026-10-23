@@ -1,61 +1,40 @@
-# Working backwards: press release (draft, dated two years out)
+# Working backwards: press release (draft)
 
-**PitCrew: solar towers that look after themselves**
+**PitCrew: every task, every part, ready before it's needed**
 
-*Commercial hosts in Texas get towers that see their own wear, protect themselves until the technician
-arrives, and get better with every repair.*
+*An agent crew that keeps semiconductor equipment running by knowing what will fail, what is down, and where
+the part is.*
 
-DALLAS, October 2028 — PitCrew is now standard on every tower in the fleet. PitCrew is a crew of
-AI agents that watches each tower's slew drive, prices what to do when one starts to wear, orders the part,
-books the technician, and turns every repair into a better next tower.
+AUSTIN — PitCrew is a crew of AI agents for NXP's equipment fleet across fabs and assembly/test sites. It keeps
+one priority queue of every maintenance task, predicts failures before they happen, puts emergencies at the
+top, and makes sure the part is already at the nearest hub before the technician leaves.
 
-Facility managers who host solar on a warehouse roof or a data center lot don't want another dashboard.
-They want the energy they were promised, and no surprises. Today a stuck tracker is found when a monthly
-report looks low; a technician drives out to diagnose it, then drives back with the part. Meanwhile the
-tower sits pointed at the wrong part of the sky.
+Today, routine maintenance runs on calendars, failures are found when a tool stops, and the part is often a
+day away. PitCrew changes the order of events. Lifelines schedule routine work weeks ahead. A failure model
+scores every machine's live readings and moves a machine that is about to fail ahead of routine work. When a
+tool does go down, that job jumps to the top, the part is pulled from the closest hub and the site is told
+what to bring.
 
-With PitCrew, the tower notices first. When a drive's friction rises, the crew checks the next windy day
-in the forecast, and if the drive might stall before the technician's route reaches it, it proposes to park
-the tower at its best fixed angle — a few dollars of energy instead of a two-thousand-dollar failure. The
-site's foreman taps Approve. The grease kit is already reserved, the visit is already on Thursday's route,
-and five other towers due for service ride on the same truck roll.
+Underneath, the Sourcing agent keeps the hubs stocked: local hubs refill from the central hub, and the central
+hub refills from verified vendors — the cheapest that still arrives in time, not the fastest at any price. The
+Internal Fabrication agent watches the factory's own machines, so a degrading line is fixed in planned
+downtime and in-house lead times stay honest.
 
-"I found out about the problem from the work order, not from the outage," said the facility manager of a
-DFW data center hosting 300 towers *(illustrative customer quote)*.
+"The technician used to find out what was wrong when they got there. Now the part is waiting at the hub,"
+*(illustrative quote)*.
 
-"Every repair now makes the next tower better," said the head of engineering *(placeholder)*. "The crew
-showed us that stepping our towers in 15-degree moves gives up a sixth of a percent of energy and cuts
-drive starts by 85 percent — so that's how ST-2 tracks. And it told us which sensor to add before we
-built it."
+## FAQ
 
-PitCrew is included with every service plan. Towers already in the field get it with a software
-update; sensors added to new towers switch on new agents automatically.
+**Does the crew act on its own?** Within limits. Purchase orders up to $500 and internal emails go out
+automatically; larger orders, external email and any change to how a machine runs wait for a person. Every
+action is logged with the tool results behind it.
 
-## FAQ — customers
+**How does it know a machine will fail?** A gradient-boosted model (XGBoost) trained on the AI4I 2020
+predictive-maintenance dataset scores each reading — temperatures, spindle speed, torque and tool wear — and
+the screen shows which reading is furthest from healthy peers.
 
-**Does the crew control my towers?** Within limits you set. Safety stow is automatic; anything that changes
-output — parking a tower, a new setpoint — or spends money above the policy limit waits for a person to
-approve it, and every action is logged with its evidence.
+**What runs on AWS?** Strands agents on Amazon Bedrock, deployed on Bedrock AgentCore Runtime, with tool calls
+traced in CloudWatch.
 
-**What does it cost?** It is part of the service plan, priced per tower per month, set below the cost of one
-truck roll a year. *(Hypothesis to test with the first five customers.)*
-
-**What happens to my data?** It stays in the fleet operator's AWS account and is used to run and improve your towers.
-
-**What if the crew is wrong?** Every recommendation shows the risk it is managing, the margin it keeps and
-the assumptions behind the prices. If a part fails anyway, the evidence packet supports the warranty claim.
-
-## FAQ — internal
-
-**Who is the customer?** The host's facility manager (uptime, no surprises), the host's insurer (proof of
-stow during hail), and the operator's own technicians (fewer, better-planned truck rolls).
-
-**Why now?** Agents on Bedrock AgentCore can call real tools under policy, AWS retired its own managed
-predictive-maintenance service (Lookout for Equipment, Oct 7, 2026), and the tower fleet is young enough to
-build the failure record right from the start.
-
-**What must be true?** Every work order closes with a verified failure mode (a lightweight FRACAS); passports
-are signed by engineering; the energy model stays calibrated against installed towers.
-
-**What is the biggest risk?** Promising an availability guarantee before the failure data can price it.
-PitCrew earns the right to guarantee by first proving it catches failures early.
+**What is still a placeholder?** The fleet names, hubs, part numbers, prices and lifelines. The models and the
+sensor readings are real.

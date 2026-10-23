@@ -2,9 +2,9 @@
 
     shiny run app/app.py --port 8000          # then open the port (VS Code web: the Ports tab)
 
-Run -> Improve -> Grow, with the approval card between the crew and the machine. The Run · Mill page is laid
-out like an asset page in a maintenance product: incident banner, stat strip, signals, the crew's activity
-log, the foreman's decision and the resulting work order. Alerts shows what the Comms agent sent the floor.
+Built for NXP Semiconductors (Austin Agentic AI Hackathon, Track 2). One priority queue fed by Maintenance
+(lifelines), Prevention (Matthew's failure model) and Cure (error codes), supported by Sourcing (hubs and
+vendors) and Internal fab (Hari's machine-downtime model). Alerts shows what the Comms agent sent the floor.
 """
 from __future__ import annotations
 
@@ -23,15 +23,11 @@ from shiny import App, reactive, render, ui  # noqa: E402
 
 from pitcrew import __version__, mill, viz  # noqa: E402
 from pitcrew.crew import Crew  # noqa: E402
-from pitcrew.decide import diagnose, energy_table  # noqa: E402
 from pitcrew.contracts import (BUFFER, FAB_MACHINES, HUBS, PLACEHOLDER, VENDORS, Plant, fab_forecast,  # noqa: E402
                                lifelines, order_card)
 from pitcrew.ops import ALERT_POLICY, TODAY  # noqa: E402
-from pitcrew.passport import manuals  # noqa: E402
-from pitcrew.tower import Fleet  # noqa: E402
 from pitcrew.world import World  # noqa: E402
 
-SHARED_FLEET = Fleet().run()  # deterministic; shared read-only by every session
 MILL_ROWS = mill.creep_scenario()
 MODE = os.environ.get("PITCREW_LLM", "offline")
 MODE_LABEL = {"offline": "Crew offline (deterministic narration)", "bedrock":
@@ -45,12 +41,12 @@ FONTS = ("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&fa
 # Agent -> (driver-tag code, team colour) for the activity log and the sidebar.
 AGENTS = {"Sentinel": ("SEN", "#9A9DAA"), "Diagnostician": ("DIA", "#FFB800"), "Race Engineer": ("RAC", "#4D7CFE"),
           "Comms": ("COM", "#8E5CF6"), "Quartermaster": ("QMS", "#00A651"), "Dispatcher": ("DSP", "#00A651"),
-          "Foreman": ("FMN", "#15151E"), "Kaizen": ("KZN", "#00A651"), "Onboarder": ("ONB", "#00A651"),
+          "Foreman": ("FMN", "#15151E"), "Onboarder": ("ONB", "#00A651"),
           "Scheduler": ("SCH", "#4D7CFE"), "Fab Engineer": ("FAB", "#6B6E7B"), "Manager": ("MGR", "#15151E"),
           "System": ("SYS", "#9A9DAA"), "Sourcing": ("SRC", "#00A651")}
 VERBS = {"Sentinel": "checked the limits", "Diagnostician": "added a finding", "Race Engineer": "proposed an action",
          "Comms": "alerted the floor", "Quartermaster": "handled parts", "Dispatcher": "booked the work",
-         "Foreman": "decided", "Kaizen": "reviewed history", "Onboarder": "onboarded an asset", "System": "note",
+         "Foreman": "decided", "Onboarder": "onboarded an asset", "System": "note",
          "Sourcing": "worked the parts"}
 
 # Earlier alerts today, so the Alerts page reads like a working inbox (simulated plant).
@@ -60,25 +56,21 @@ ALERT_HISTORY = [
      "sent_at": None, "channel": "Email", "body": "Please confirm price and delivery for 10 carbide inserts, part "
      "INSERT-CNMG-L, to the Austin plant by Monday.", "checks": ["Unit price", "Ship date", "Lot number on the slip"],
      "escalate_after_min": None, "rule": ALERT_POLICY["External"]},
-    {"id": "AL-H01", "ref": "Tower 7", "severity": "SEV-3", "to": ["Field technician (DFW route)"],
-     "subject": "[SEV-3] Tower 7 drive friction up 33%. Re-grease on the Thursday route", "status": "acknowledged",
-     "sent_at": "10:05:12", "acked_at": "10:22:03", "acked_by": "Field technician", "channel": "Daily digest",
-     "body": "Tower 7 (lot B grease) needs 33% more energy per degree than a healthy drive. Parked at 180 deg until "
-     "the visit.", "checks": ["Bring GREASE-KIT-SD (reserved)", "Check the drive seals", "Record the failure mode"],
+    {"id": "AL-H01", "ref": "Wire bonder 31", "severity": "SEV-3", "to": ["Site lead, Fab North"],
+     "subject": "[SEV-3] Wire bonder 31 at 46% failure risk. Sensor swap at the 12:00 break", "status": "acknowledged",
+     "sent_at": "10:05:12", "acked_at": "10:22:03", "acked_by": "Site lead", "channel": "Daily digest",
+     "body": "The failure model puts Wire bonder 31 at 46% (torque far from its peers). Spindle sensor module swap "
+     "booked for the break.", "checks": ["Bring PN-3307 (reserved)", "Check bond-head torque", "Record the failure mode"],
      "escalate_after_min": None, "rule": ALERT_POLICY["SEV-3"]},
 ]
 
 ICON = {
     "assets": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
               'aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>',
-    "towers": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
-              'aria-hidden="true"><path d="M12 3v18M7 21h10M5 8h14l-2 5H7z"/></svg>',
     "alerts": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
               'aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>',
     "improve": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
                'aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg>',
-    "grow": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
-            'aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
     "why": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
            'aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>',
     "arch": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
@@ -93,15 +85,15 @@ ICON["incidents"] = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none
                      '0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>')
 # Closed incidents from earlier today, so the list reads like a working plant (simulated).
 INCIDENT_HISTORY = [
-    {"id": "INC-209", "asset": "Tower 7", "summary": "Drive friction up 33% (lot B grease); parked at 180 deg until "
-     "the Thursday route", "severity": "SEV-3", "status": "MITIGATED", "opened": "10:04", "owner": "Race Engineer",
-     "linked": ["AL-H01", "WO-4102"], "page": "towers", "chain": [
-         ("10:04", "Sentinel", "Detect", "Friction alarm on Tower 7: +33% energy per degree"),
-         ("10:05", "Comms", "Notify", "SEV-3 email to the DFW field technician"),
-         ("10:05", "Diagnostician", "Analyze", "Grease breakdown, supplier lot B"),
-         ("10:06", "Race Engineer", "Plan", "Park & Price: park at 180 deg for $3 of energy"),
-         ("10:21", "Foreman", "Approve", "Approved: park until the visit"),
-         ("10:22", "Dispatcher", "Execute", "WO-4102 on the Thursday route, 6 towers batched")]},
+    {"id": "INC-209", "asset": "Wire bonder 31", "summary": "Bond-head torque drifting; spindle sensor module "
+     "swapped at the break", "severity": "SEV-3", "status": "MITIGATED", "opened": "10:04", "owner": "Scheduler",
+     "linked": ["AL-H01", "WO-4102"], "page": "prevention", "chain": [
+         ("10:04", "Sentinel", "Detect", "Failure model: Wire bonder 31 at 46% risk (torque off peers)"),
+         ("10:05", "Comms", "Notify", "SEV-3 email to the Fab North site lead"),
+         ("10:05", "Diagnostician", "Analyze", "Spindle sensor module near end of rated life"),
+         ("10:06", "Scheduler", "Plan", "Lifeline job pulled forward to the 12:00 break"),
+         ("10:21", "Foreman", "Approve", "Approved: swap at the break"),
+         ("10:22", "Dispatcher", "Execute", "WO-4102 booked; PN-3307 reserved at Local hub North")]},
     {"id": "INC-207", "asset": "VM-03", "summary": "Coolant filter clogging; filter replaced", "severity": "SEV-3",
      "status": "RESOLVED", "opened": "07:41", "owner": "Dispatcher", "linked": ["WO-4087"], "page": None, "chain": [
          ("07:41", "Sentinel", "Detect", "Process temperature gap narrowing on VM-03"),
@@ -119,16 +111,13 @@ ICON["fab"] = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stro
 NAV = [("queue", "Priority queue", "queue"), ("prevention", "Prevention", "improve"), ("cure", "Cure", "incidents"),
        ("sourcing", "Parts & sourcing", "parts"), ("fab", "Internal fab", "fab"), ("alerts", "Alerts · SendGrid", "alerts"),
        (None, "V0.1 · STRETCH", None),
-       ("mill", "VM-07 Lift & Coast", "assets"), ("towers", "Solar towers", "towers"),
-       ("improve", "Improve", "improve"), ("grow", "Onboard asset", "grow"), ("why", "Why (press release)", "why"),
+       ("mill", "VM-07 Lift & Coast", "assets"), ("why", "Why (press release)", "why"),
        ("arch", "Architecture", "arch")]
 TYPE_STYLE = {"cure": ("CURE", "flag red"), "prevention": ("PREV", "flag amber"), "maintenance": ("MAINT", "flag ink")}
 
 
 def new_world() -> World:
-    w = World()
-    w.__dict__["fleet"] = SHARED_FLEET
-    return w
+    return World()
 
 
 # ------------------------------------------------------------------ small UI helpers
@@ -174,15 +163,10 @@ def transcript(turns: list[dict], idle: str = "The crew is idle."):
     return ui.tags.ol(*items, class_="act")
 
 
-def options_table(options: list[dict], rec_key: str, kind: str):
-    if kind == "mill":
-        head = ["Option", "Expected cost", "Risk before window", "What it means"]
-        rows = [(o["title"], f"${o['cost_usd']:,.0f}", f"{100 * o['p_fail_before_window']:.0f}%", o["detail"])
-                for o in options]
-    else:
-        head = ["Option", "Expected cost", "Risk before visit", "Energy given up"]
-        rows = [(o["title"], f"${o['expected_cost_usd']:,.0f}", f"{100 * o['p_fail']:.0f}%",
-                 f"{o['energy_lost_kwh']:.0f} kWh (${o['energy_lost_usd']:.2f})") for o in options]
+def options_table(options: list[dict], rec_key: str, kind: str = "mill"):
+    head = ["Option", "Expected cost", "Risk before window", "What it means"]
+    rows = [(o["title"], f"${o['cost_usd']:,.0f}", f"{100 * o['p_fail_before_window']:.0f}%", o["detail"])
+            for o in options]
     keys = [o["key"] for o in options]
     trs = [ui.tags.tr(*[ui.tags.td(c) for c in r], class_="rec" if k == rec_key else "") for r, k in zip(rows, keys)]
     return ui.tags.table(ui.tags.thead(ui.tags.tr(*[ui.tags.th(h) for h in head])), ui.tags.tbody(*trs),
@@ -264,18 +248,18 @@ def prevention_page():
         "prevention",
         topbar("Fleet / <b>Prevention</b>"),
         ui.div(
-            pagehead("PRODUCT A VS ITS PEERS · MATTHEW", "Prevention",
-                     "A product that behaves differently from its peers is wearing faster than its lifeline assumes. "
-                     "The more different it is (D), the sooner it is visited."),
+            pagehead("FAILURE MODEL · MATTHEW", "Prevention",
+                     "Matthew's XGBoost model scores every machine's live reading for failure. Above 70% the crew pulls "
+                     "its job forward to the top of routine work; 40–70% adds the part to predicted demand."),
             ui.div(ui.input_select("prev_product", None, choices={k: v["name"] for k, v in Plant().products.items()},
-                                   selected="T-07"), ui.output_ui("prev_head", inline=True),
+                                   selected="DS-07"), ui.output_ui("prev_head", inline=True),
                    class_="pickrow"),
-            ui.div(ui.div(box("Signals vs peers", ui.output_plot("prev_chart", height="290px"),
-                              note="same model, same site, similar age"),
+            ui.div(ui.div(box("Sensor readings vs healthy peers", ui.output_plot("prev_chart", height="330px"),
+                              note="healthy AI4I records of the same type"),
                           class_="col-main"),
                    ui.div(box("Lifelines", ui.output_ui("prev_lifelines"), note="maintenance pipeline", pad=True),
                           class_="col-side"), class_="row2"),
-            box("Fleet", ui.output_ui("prev_fleet"), right="D < 2 normal · 2–3 watch · > 3 act"),
+            box("Fleet", ui.output_ui("prev_fleet"), right="failure risk: < 40% normal · 40–70% watch · ≥ 70% act"),
             class_="page"))
 
 
@@ -305,7 +289,7 @@ def sourcing_page():
                                class_="small-note"), style="display:flex;gap:12px;align-items:center;padding:12px 16px"),
                 ui.output_ui("src_agent")), right="pitcrew/sourcing.py"),
             box("Stock vs upcoming demand", ui.output_ui("hub_table"), right="30-day horizon"),
-            ui.div(ui.input_select("src_part", None, choices={p: p for p in VENDORS}, selected="SEAL-KIT-SD"),
+            ui.div(ui.input_select("src_part", None, choices={p: p for p in VENDORS}, selected="PN-3307"),
                    ui.input_select("src_hub", None, choices={k: v["name"] for k, v in HUBS.items()}, selected="NORTH"),
                    class_="pickrow"),
             ui.output_ui("order_card_ui"),
@@ -326,8 +310,8 @@ def fab_page():
 
 def demo_bar():
     return ui.div(ui.tags.b("Demo"),
-                  ui.input_action_button("ev_prev", "1 · Tower 7 drifts from peers"),
-                  ui.input_action_button("ev_cure", "2 · Tower 19 throws E-STALL"),
+                  ui.input_action_button("ev_prev", "1 · Dicing saw 07: failure risk jumps"),
+                  ui.input_action_button("ev_cure", "2 · Dicing saw 19 throws E-OVHT"),
                   ui.input_action_button("ev_fab", "3 · Makino L3 hydraulic drop"),
                   ui.input_action_button("ev_reset", "Reset"),
                   class_="democtl demofloat")
@@ -368,37 +352,6 @@ def mill_page():
             class_="page"))
 
 
-def towers_page():
-    return ui.nav_panel(
-        "towers",
-        topbar("Assets / <b>ST-1 tower fleet</b>"),
-        ui.div(
-            pagehead("48 ST-1 TOWERS · THREE DFW SITES · SIMULATED DRIVE MODEL", "Solar towers",
-                     "Park & Price: the same crew on a different machine, priced with the field energy model."),
-            ui.layout_columns(
-                ui.div(
-                    ui.card(ui.card_header("Fleet"), ui.output_plot("fleet_map", height="300px")),
-                    ui.card(ui.card_header("Selected tower"), ui.output_plot("tower_chart", height="300px")),
-                    ui.output_ui("tower_option_cards"),
-                ),
-                ui.div(
-                    ui.card(ui.card_header("Demo"),
-                            ui.input_select("tower_id", "Tower", choices={"7": "Tower 7 · grease, supplier lot B",
-                                                                           "19": "Tower 19 · seal leak",
-                                                                           "31": "Tower 31 · backlash",
-                                                                           "42": "Tower 42 · bearing (needs a future sensor)"}),
-                            ui.div(ui.input_action_button("tower_assess", "Crew: assess and price options",
-                                                          class_="btn-primary"), class_="step-btns"),
-                            ui.p("Keep tracking, coast, park at the best azimuth or send a technician tomorrow - each "
-                                 "priced with the energy model and a weather Monte Carlo of the drive.",
-                                 class_="small-note")),
-                    ui.card(ui.card_header("Activity"), ui.output_ui("tower_transcript")),
-                    ui.output_ui("tower_approval"),
-                ),
-                col_widths=[7, 5]),
-            class_="page"))
-
-
 def incidents_page():
     return ui.nav_panel(
         "incidents",
@@ -434,59 +387,6 @@ def alerts_page():
             class_="page"))
 
 
-def improve_page():
-    return ui.nav_panel(
-        "improve",
-        topbar("<b>Improve</b>"),
-        ui.div(
-            pagehead("KAIZEN · WEEKLY", "Improve", "Rules found in data, supplier lots, Sensor Futures and the next "
-                     "tower's design changes."),
-            ui.layout_columns(
-                ui.div(
-                    ui.card(ui.card_header("Kaizen"),
-                            ui.input_action_button("kaizen_run", "Run the Kaizen agent", class_="btn-primary"),
-                            ui.output_ui("kaizen_tiles")),
-                    ui.card(ui.card_header("Rules found in AI4I vs the published walls"), ui.output_ui("kaizen_rules")),
-                    ui.card(ui.card_header("Failure rate by supplier lot"), ui.output_plot("kaizen_lots", height="280px")),
-                    ui.card(ui.card_header("Sensor Futures"), ui.output_plot("kaizen_futures", height="290px")),
-                ),
-                ui.div(
-                    ui.card(ui.card_header("Activity"), ui.output_ui("kaizen_transcript")),
-                    ui.card(ui.card_header("Design-change request for ST-2 (draft)"), ui.output_ui("kaizen_dcr")),
-                ),
-                col_widths=[7, 5]),
-            class_="page"))
-
-
-def grow_page():
-    return ui.nav_panel(
-        "grow",
-        topbar("<b>Onboard asset</b>"),
-        ui.div(
-            pagehead("ONBOARDER · PER MACHINE", "Onboard an asset", "Manual -> passport with future hardware slots -> "
-                     "a human signs -> the agents start."),
-            ui.layout_columns(
-                ui.div(
-                    ui.card(ui.card_header("Onboard a machine from its manual"),
-                            ui.input_select("manual", "Manual", choices=manuals(), selected="lathe_l2_manual.md"),
-                            ui.div(ui.input_action_button("grow_read", "Onboarder: read it", class_="btn-primary"),
-                                   ui.input_action_button("grow_sign", "Sign the passport", class_="btn-success"),
-                                   class_="step-btns"),
-                            ui.output_ui("grow_passport")),
-                ),
-                ui.div(
-                    ui.card(ui.card_header("Activity"), ui.output_ui("grow_transcript")),
-                    ui.card(ui.card_header("Future hardware slots"),
-                            ui.p("Signals the manual lists as not fitted become slots: the agents that need them "
-                                 "already exist and switch on the day the sensor is installed. Try it on the solar "
-                                 "tower: install the acoustic-emission slot, then look at Tower 42.",
-                                 class_="small-note"),
-                            ui.output_ui("slot_buttons")),
-                ),
-                col_widths=[7, 5]),
-            class_="page"))
-
-
 def story_page():
     pr = (ROOT / "docs" / "PRFAQ.md").read_text()
     return ui.nav_panel("why", topbar("<b>Why</b>"), ui.div(ui.card(ui.markdown(pr)), class_="page"))
@@ -495,15 +395,15 @@ def story_page():
 def arch_page():
     svg = (ROOT / "docs" / "architecture.svg").read_text()
     table = pd.DataFrame([
-        ("Agents", "Strands Agents SDK, Graph for Run (fixed order, repeatable), single agents for Improve/Grow"),
+        ("Agents", "Strands Agents SDK on Amazon Bedrock: Graph for the mill crew, single agents for Sourcing"),
         ("Runtime", "Amazon Bedrock AgentCore Runtime (agentcore/agent.py)"),
         ("Tools", "AgentCore Gateway exposing the World tools as MCP; CMMS via OpenAPI (MaintainX pattern)"),
         ("Guardrails", "AgentCore Policy (Cedar): POs over $500 and every setpoint change need the foreman"),
         ("Comms", "Alerts to the floor by policy (SEV-1/2/3); Amazon SES for email in AWS, simulated here"),
-        ("Knowledge", "Bedrock Knowledge Base over manuals; AgentCore Memory for incidents; passports in S3"),
+        ("Knowledge", "Bedrock Knowledge Base over equipment manuals; AgentCore Memory for incidents"),
         ("Suppliers", "A2A: supplier agents on their own runtimes (agentcore/supplier_a2a.py)"),
-        ("Energy", "Table exported from the two-wing field model (scripts/export_energy_table.py)"),
-        ("Data", "AI4I 2020 (UCI 601); tower drive model anchored to DuraMAT tracker motor current, NASA IMS"),
+        ("Models", "Prevention: Matthew's XGBoost failure model (AI4I 2020); Internal fab: Hari's machine-downtime model"),
+        ("Data", "AI4I 2020 (UCI 601) for the failure model and the VM-07 walls; fleet, hubs and prices are placeholders"),
     ], columns=["Piece", "On AWS"])
     return ui.nav_panel("arch", topbar(f"<b>Architecture</b> · v{__version__}"),
                         ui.div(ui.card(ui.HTML(svg)),
@@ -537,7 +437,7 @@ app_ui = ui.page_fluid(
     ui.div(sidebar(),
            ui.tags.main(ui.div(class_="redline"),
                         ui.navset_hidden(queue_page(), prevention_page(), cure_page(), sourcing_page(), fab_page(),
-                                         alerts_page(), mill_page(), towers_page(), improve_page(), grow_page(),
+                                         alerts_page(), mill_page(),
                                          story_page(), arch_page(), id="page"),
                         class_="mainpane"),
            demo_bar(), class_="shell"),
@@ -558,11 +458,6 @@ def server(input, output, session):
     alerts_rev = reactive.value(0)
     alert_sel = reactive.value(None)
     incident_sel = reactive.value(None)
-    tower_plan = reactive.value(None)
-    tower_exec = reactive.value(None)
-    kaizen = reactive.value(None)
-    grow = reactive.value({"turns": [], "passport": None})
-    slots_rev = reactive.value(0)  # bumps when a future hardware slot is installed
 
     # ---------------- navigation
     for key, _, _ in NAV:
@@ -615,50 +510,53 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.ev_prev)
     def _():
-        if "prevention:T-07" in plant.events:
+        if "prevention:DS-07" in plant.events:
             return
-        plant.tower7_drifts()
-        p = plant.prevention()["T-07"]
-        log("Sentinel", "compared Tower 7 with its peers",
-            f"Tower 7: D = {p['D']} against {p['peer_count']} peers; worst signal {p['worst_signal']}. Action: {p['action']}.",
-            "peer_deviation", {"product": "T-07"}, p)
-        j = job_for("T-07")
+        plant.product_drifts("DS-07")
+        p = plant.prevention()["DS-07"]
+        r = plant.readings["DS-07"]
+        log("Sentinel", "scored Dicing saw 07",
+            f"Matthew's failure model: Dicing saw 07 is at {p['risk']:.0%} failure risk (torque {r['Torque [Nm]']:g} Nm, "
+            f"tool wear {r['Tool wear [min]']:g} min; worst vs {p['peer_count']:,} healthy peers: {p['worst_signal']}). "
+            f"Action: {p['action']}.", "failure_risk", {"product": "DS-07"}, p)
+        j = job_for("DS-07")
         parts = "; ".join(f"{s['part']} {s['text']}" for s in j["parts_status"])
         log("Scheduler", "re-ranked the queue",
-            f"{j['job_id']} for Tower 7 pulled forward from {j['was_due']:%b %d} to {j['due_by']:%b %d}, now rank "
+            f"{j['job_id']} for Dicing saw 07 pulled forward from {j['was_due']:%b %d} to {j['due_by']:%b %d}, now rank "
             f"{j['rank']}. {parts}.", "queue", {}, {k: v for k, v in j.items() if k != "rank_key"})
-        alert_now("told the site", "Tower 7", "SEV-3", ["Site lead, DFW warehouse roof"],
-                  f"[SEV-3] Tower 7 visit moved to {j['due_by']:%b %d}: drifting from its peers",
-                  f"Tower 7 is behaving differently from its {p['peer_count']} peers ({p['worst_signal']}, D = {p['D']}). "
+        alert_now("told the site", "Dicing saw 07", "SEV-3", ["Site lead, Fab North"],
+                  f"[SEV-3] Dicing saw 07 service moved to {j['due_by']:%b %d}: {p['risk']:.0%} failure risk",
+                  f"The failure model puts Dicing saw 07 at {p['risk']:.0%} ({p['worst_signal']} far from its peers). "
                   f"Its {j['component'].lower()} job moved from {j['was_due']:%b %d} to {j['due_by']:%b %d}.",
-                  ["Expect the technician on the new date", "Note any alarms on the tower controller"])
+                  ["Expect the technician on the new date", "Check the blade for wear and note any torque alarms"])
         bump()
 
     @reactive.effect
     @reactive.event(input.ev_cure)
     def _():
-        if "cure:T-19" in plant.events:
+        if "cure:DS-19" in plant.events:
             return
-        c = plant.tower19_stalls()
+        c = plant.product_down("DS-19")
         log("Sentinel", f"opened {c['id']}",
-            f"Tower 19 threw {c['code']} ({c['meaning']}): the product is down, about ${c['downtime_usd_per_h']:.0f}/h "
-            "of lost energy.", "error_code", {"product": "T-19"}, {k: v for k, v in c.items() if k != "opened"})
+            f"Dicing saw 19 threw {c['code']} ({c['meaning']}): the tool is down, about "
+            f"${c['downtime_usd_per_h']:,.0f}/h of lost output.", "error_code", {"product": "DS-19"},
+            {k: v for k, v in c.items() if k != "opened"})
         log("Diagnostician", "mapped the code",
             f"{c['code']} → {c['component']}; parts: " + ", ".join(f"{p} × {q}" for p, q in c["parts"]) + ".",
             "error_code_table", {"code": c["code"]}, {"component": c["component"], "parts": c["parts"]})
-        j = job_for("T-19")
+        j = job_for("DS-19")
         log("Quartermaster", "pulled the part",
             "; ".join(f"{s['part']} {s['text']}" for s in j["parts_status"]) + ".", "queue", {},
             {k: v for k, v in j.items() if k != "rank_key"})
-        alert_now("emailed the site and technician", "Tower 19", "SEV-1",
-                  ["Site lead, DFW warehouse roof", "Technician, DFW route"],
-                  f"[SEV-1] Tower 19 is down ({c['code']}). Drive motor reserved at {HUBS[j['hub']]['name']}",
-                  f"Tower 19 stopped with {c['code']} ({c['meaning']}). Likely failed component: {c['component']}. "
+        alert_now("emailed the site and technician", "Dicing saw 19", "SEV-1",
+                  ["Site lead, Fab North", "Field technician, North"],
+                  f"[SEV-1] Dicing saw 19 is down ({c['code']}). Cooling fan module reserved at {HUBS[j['hub']]['name']}",
+                  f"Dicing saw 19 stopped with {c['code']} ({c['meaning']}). Likely failed component: {c['component']}. "
                   f"Priority job {j['job_id']} is at the top of the queue for today.",
-                  [f"Pick up DRIVE-MOTOR-SD at {HUBS[j['hub']]['name']}", "Lock out the drive before opening the housing",
+                  [f"Pick up PN-1043 at {HUBS[j['hub']]['name']}", "Lock out the tool before opening the enclosure",
                    "Record the failure mode when closing the job"])
         log("Dispatcher", "booked the priority job",
-            f"{j['job_id']} is rank {j['rank']}: technician rerouted to Tower 19 today.")
+            f"{j['job_id']} is rank {j['rank']}: technician rerouted to Dicing saw 19 today.")
         bump()
 
     @reactive.effect
@@ -673,10 +571,10 @@ def server(input, output, session):
         log("Fab Engineer", "read the downtime model",
             f"Makino L3: {s3['status']} (failure probability {prob}, {s3['source']}).", "fab_status",
             {"machine": "MK-L3"}, s3)
-        fc = fab_forecast("DRIVE-MOTOR-SD", st)
+        fc = fab_forecast("PN-1043", st)
         log("Quartermaster", "re-checked in-house supply",
-            f"In-house DRIVE-MOTOR-SD now takes {fc['lead_time_days']} days ({fc['reason']}). The order card "
-            "re-picks the cheapest option that still arrives in time.", "fab_forecast", {"part": "DRIVE-MOTOR-SD"}, fc)
+            f"In-house PN-1043 now takes {fc['lead_time_days']} days ({fc['reason']}). The order card "
+            "re-picks the cheapest option that still arrives in time.", "fab_forecast", {"part": "PN-1043"}, fc)
         bump()
 
     @reactive.effect
@@ -812,9 +710,11 @@ def server(input, output, session):
         plant_rev()
         p = plant.prevention()[input.prev_product()]
         cls = {"act": "health risk", "watch": "mode off", "normal": "health ok"}[p["action"]]
-        return ui.span(skew(f"D = {p['D']} · {p['action'].upper()}", cls),
-                       ui.span(f" worst: {p['worst_signal']} · {p['peer_count']} peers", class_="small-note"),
-                       source_note("placeholder until Matthew's AI4I model is plugged in"))
+        risk = "n/a" if p["risk"] is None else f"{p['risk']:.0%}"
+        return ui.span(skew(f"FAILURE RISK {risk} · {p['action'].upper()}", cls),
+                       ui.span(f" furthest from peers: {p['worst_signal']} · {p['peer_count']:,} healthy peers "
+                               f"(type {p.get('machine_type', '')})", class_="small-note"),
+                       source_note(p["source"]))
 
     @render.plot(alt="Product signals against the peer range")
     def prev_chart():
@@ -843,13 +743,14 @@ def server(input, output, session):
     def prev_fleet():
         plant_rev()
         rows = []
-        for pid, p in sorted(plant.prevention().items(), key=lambda kv: -kv[1]["D"]):
+        for pid, p in sorted(plant.prevention().items(), key=lambda kv: -(kv[1]["risk"] or 0)):
             pr = plant.products[pid]
             cls = {"act": "esc", "watch": "wait", "normal": "ack"}[p["action"]]
             rows.append(ui.tags.tr(ui.tags.td(ui.tags.b(pr["name"])), ui.tags.td(pr["site"]),
-                                   ui.tags.td(f"{p['D']:.1f}"), ui.tags.td(ui.span(p["action"].upper(), class_=f"st {cls}")),
+                                   ui.tags.td("n/a" if p["risk"] is None else f"{p['risk']:.0%}"),
+                                   ui.tags.td(ui.span(p["action"].upper(), class_=f"st {cls}")),
                                    ui.tags.td(p["worst_signal"])))
-        head = ["Product", "Site", "D", "Action", "Worst signal"]
+        head = ["Equipment", "Site", "Failure risk", "Action", "Furthest from peers"]
         return ui.div(ui.tags.table(ui.tags.thead(ui.tags.tr(*[ui.tags.th(h) for h in head])), ui.tags.tbody(*rows),
                                     class_="opts"), style="overflow-x:auto;padding:4px 12px 8px")
 
@@ -859,8 +760,8 @@ def server(input, output, session):
         q = pq()
         alerts_rev()
         if not plant.cures:
-            return box("Products down", ui.p("No product is down. Press 2 in the demo bar to have Tower 19 throw "
-                                             "E-STALL.", class_="idle"), pad=True)
+            return box("Products down", ui.p("No equipment is down. Press 2 in the demo bar to have Dicing saw 19 "
+                                             "throw E-OVHT.", class_="idle"), pad=True)
         out = []
         for c in plant.cures:
             j = next((x for x in q["jobs"] if x.get("incident") == c["id"]), {})
@@ -1570,224 +1471,6 @@ def server(input, output, session):
             w.agent = "Comms"
             w.escalate_alert(a["id"])
             alerts_rev.set(alerts_rev() + 1)
-
-    # ---------------- towers
-    @render.plot(alt="Fleet map with flagged towers")
-    def fleet_map():
-        slots_rev()
-        ov = w.fleet_overview()
-        return viz.fleet_map(SHARED_FLEET.today(), ov["flagged"], int(input.tower_id()))
-
-    @render.plot(alt="Selected tower indicator over time")
-    def tower_chart():
-        slots_rev()
-        tid = int(input.tower_id())
-        d = diagnose(SHARED_FLEET, tid, w.installed_slots)
-        if not d["primary"]:
-            h = SHARED_FLEET.history(tid, 120)
-            series = {"date": [x.date().isoformat() for x in h["date"]],
-                      "value": (h["epd_norm"].ewm(span=7).mean() / SHARED_FLEET.baseline_epd).tolist()}
-            return viz.tower_indicator(series, 1.15, 1.5, f"Tower {tid}: nothing flagged with today's sensors", None)
-        p = d["primary"]
-        label = {"friction": "energy per degree vs a healthy drive", "backlash": "reversal dead zone (deg)",
-                 "grease_water": "water in the grease (ppm)", "acoustic": "acoustic emission (counts)"}.get(
-            p["detector"], p["detector"])
-        return viz.tower_indicator(d["series"], p["alarm"], p["fail_at"], f"Tower {tid}: {label}", d.get("rul"))
-
-    @reactive.effect
-    @reactive.event(input.tower_assess)
-    def _():
-        with ui.Progress() as p:
-            p.set(message=f"Crew is assessing tower {input.tower_id()}...")
-            tower_plan.set(crew.plan_tower(int(input.tower_id())))
-        tower_exec.set(None)
-
-    @reactive.effect
-    @reactive.event(input.tower_approve)
-    def _():
-        if tower_plan() is None or not tower_plan().get("recommendation"):
-            return
-        tower_exec.set(crew.execute(tower_plan(), "Foreman"))
-
-    @render.ui
-    def tower_transcript():
-        turns = (tower_plan() or {}).get("turns", []) + (tower_exec() or {}).get("turns", [])
-        return transcript(turns)
-
-    @render.ui
-    def tower_option_cards():
-        p = tower_plan()
-        if not p or not p.get("options"):
-            return ui.div()
-        return ui.div(ui.card(ui.card_header("Park & Price"), ui.output_plot("tower_options_plot", height="250px")),
-                      ui.card(ui.card_header("Energy behind the prices"), ui.output_plot("tower_energy_plot",
-                                                                                          height="250px")))
-
-    @render.plot(alt="Expected cost of each option")
-    def tower_options_plot():
-        p = tower_plan()
-        return viz.option_risk(p["options"], p["visit_in_days"])
-
-    @render.plot(alt="Daily energy per option over the window")
-    def tower_energy_plot():
-        p = tower_plan()
-        start = dt.date(2026, 10, 24)
-        return viz.energy_window(energy_table(), start, max(p["visit_in_days"], 2), p["energy"]["park_azimuth"])
-
-    @render.ui
-    def tower_approval():
-        p = tower_plan()
-        if not p or not p.get("recommendation"):
-            return ui.div()
-        rec = p["recommendation"]
-        body = [options_table(p["options"], rec["key"], "tower"),
-                ui.p(f"Failure cost ~${p['failure_cost_usd']:,.0f} (new drive, lift, regional truck roll, "
-                     f"{p['economics']['drive_lead_days']} days stuck). Energy at "
-                     f"${p['economics']['energy_usd_per_kwh']:.2f}/kWh. Fix: {p['fix']['title']}.",
-                     class_="small-note")]
-        if tower_exec():
-            wo = tower_exec().get("work_order") or {}
-            b = tower_exec().get("batched") or []
-            body.append(ui.p(f"Approved · {wo.get('wo', '')} on {wo.get('due', '')}"
-                             + (f" · {len(b)} more towers batched on the same truck roll" if b else ""),
-                             class_="approved"))
-        else:
-            body.append(ui.input_action_button("tower_approve", f"Approve: {rec['title']}", class_="btn-approve"))
-        return ui.card(ui.card_header(f"Your call: tower {p['tower_id']}"), *body, class_="approval")
-
-    # ---------------- improve
-    @reactive.effect
-    @reactive.event(input.kaizen_run)
-    def _():
-        with ui.Progress() as p:
-            p.set(message="Kaizen is mining the fleet history...")
-            kaizen.set(crew.improve())
-
-    @render.ui
-    def kaizen_tiles():
-        k = kaizen()
-        if not k:
-            return ui.p("Mines AI4I and the fleet's incident history; proposes rules, supplier actions and the "
-                        "next tower's hardware.", class_="small-note")
-        tr, sf = k["tracking"], k["futures"]
-        b = next((x for x in k["lots"]["lots"] if x["lot"] == "B"), {})
-        return ui.layout_columns(
-            tile(f"{tr['energy_loss_step15_pct']}%", "energy given up by 15 deg step tracking"),
-            tile(f"-{tr['starts_cut_pct']:.0f}%", "drive starts per day"),
-            tile(f"{b.get('rate_ratio_vs_A', '?')}x", "lot B failure rate vs lot A"),
-            tile(f"${sf['crew_value_usd_per_tower_year']:,.0f}", "per tower-year: crew acting on today's sensors"),
-            col_widths=[3, 3, 3, 3])
-
-    @render.ui
-    def kaizen_rules():
-        k = kaizen()
-        if not k:
-            return ui.div()
-        df = pd.DataFrame(k["rules"]["rules"])[["mode", "rule", "published", "precision", "recall", "count"]]
-        return ui.div(ui.HTML(df.to_html(index=False, classes="opts", border=0)),
-                      ui.p(f"Source: {k['rules']['source']}", class_="small-note"))
-
-    @render.plot(alt="Failures per tower-year by supplier lot")
-    def kaizen_lots():
-        k = kaizen()
-        if not k:
-            return None
-        return viz.lots_chart(k["lots"]["lots"])
-
-    @render.plot(alt="Value of each future sensor per tower-year")
-    def kaizen_futures():
-        k = kaizen()
-        if not k:
-            return None
-        return viz.futures_chart(k["futures"]["slots"], k["futures"]["crew_value_usd_per_tower_year"])
-
-    @render.ui
-    def kaizen_transcript():
-        return transcript((kaizen() or {}).get("turns", []))
-
-    @render.ui
-    def kaizen_dcr():
-        k = kaizen()
-        if not k:
-            return ui.div()
-        items = [ui.div(ui.tags.b(f"{i['id']} · {i['area']}"), ui.p(i["change"]),
-                        ui.p(i["evidence"], class_="small-note"), ui.p(f"Test: {i['test']}", class_="small-note"),
-                        ui.hr()) for i in k["dcr"]["items"]]
-        return ui.div(*items)
-
-    # ---------------- grow
-    @reactive.effect
-    @reactive.event(input.grow_read)
-    def _():
-        g = crew.grow(input.manual())
-        grow.set({"turns": g["turns"], "passport": g["passport"]})
-
-    @reactive.effect
-    @reactive.event(input.grow_sign)
-    def _():
-        g = grow()
-        if not g["passport"]:
-            return
-        s = crew.grow_sign(g["passport"]["asset_id"], "Foreman")
-        grow.set({"turns": g["turns"] + s["turns"], "passport": w.passports[g["passport"]["asset_id"]]})
-
-    @render.ui
-    def grow_transcript():
-        return transcript(grow()["turns"])
-
-    @render.ui
-    def grow_passport():
-        p = grow()["passport"]
-        if not p:
-            return ui.p("Pick a manual and let the Onboarder read it.", class_="small-note")
-        walls = pd.DataFrame(p["walls"])[["name", "signal", "min", "max", "unit", "condition"]].fillna("")
-        sig = ui.div(*[ui.span(("● " if s["fitted"] else "○ ") + s["name"],
-                               class_="slot installed" if s["fitted"] else "slot") for s in p["signals"]])
-        checks = ui.div(*[ui.p(c["msg"], class_="ok" if c["level"] == "ok" else "err") for c in p["checks"]])
-        signed = (ui.p(f"Signed by {p['approved_by']}", class_="approved") if p.get("approved_by")
-                  else ui.p("Not signed yet: a human checks the walls first.", class_="small-note"))
-        return ui.div(ui.h5(f"{p['asset_id']} · {p['asset_class']}"), checks, signed,
-                      ui.HTML(walls.to_html(index=False, classes="opts", border=0)), ui.h6("Signals"), sig)
-
-    @render.ui
-    def slot_buttons():
-        grow()
-        slots_rev()
-        tr = w.passports.get("ST-1")
-        if not tr:
-            return ui.p("Onboard tower_drive_manual.md to see the tower's slots.", class_="small-note")
-        chips = [ui.span(s["signal"], class_="slot installed" if s["status"] == "installed" else "slot")
-                 for s in tr["slots"]]
-        return ui.div(*chips, ui.div(ui.input_action_button("install_ae", "Install the acoustic-emission slot",
-                                                            class_="btn-outline-success"),
-                                     ui.input_action_button("install_grease", "Install the grease sensor slot",
-                                                            class_="btn-outline-success"), class_="step-btns"))
-
-    @reactive.effect
-    @reactive.event(input.install_ae)
-    def _():
-        if "ST-1" not in w.passports:
-            return
-        w.install_slot("ST-1", "acoustic")
-        slots_rev.set(slots_rev() + 1)
-        g = grow()
-        grow.set({"turns": g["turns"] + [{"agent": "Onboarder", "stage": "Grow", "tools": w.trace[-1:],
-                                          "say": "Acoustic-emission slot installed on the ST-1 passport: the bearing "
-                                                 "detector is live fleet-wide. Check Tower 42."}],
-                  "passport": g["passport"]})
-
-    @reactive.effect
-    @reactive.event(input.install_grease)
-    def _():
-        if "ST-1" not in w.passports:
-            return
-        w.install_slot("ST-1", "grease")
-        slots_rev.set(slots_rev() + 1)
-        g = grow()
-        grow.set({"turns": g["turns"] + [{"agent": "Onboarder", "stage": "Grow", "tools": w.trace[-1:],
-                                          "say": "Grease-condition slot installed: water and iron detectors are live. "
-                                                 "Tower 19's seal leak now shows weeks earlier."}],
-                  "passport": g["passport"]})
 
 
 app = App(app_ui, server, static_assets=ROOT / "app" / "www")

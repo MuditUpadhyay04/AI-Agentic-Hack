@@ -15,12 +15,9 @@ import sys
 
 import websockets
 
-PLOTS = ["prev_chart", "mill_signals", "mill_envelope", "fleet_map", "tower_chart", "tower_options_plot", "tower_energy_plot",
-         "kaizen_lots", "kaizen_futures"]
+PLOTS = ["prev_chart", "mill_signals", "mill_envelope"]
 UIS = ["mill_status", "mill_transcript", "mill_approval", "mill_incident", "mill_stats", "mill_wo", "mill_health",
-       "plant_chip", "crew_list", "alert_badge", "alert_stats", "queue_badge", "cure_badge", "queue_chip", "queue_stats", "queue_table", "queue_detail", "queue_log", "prev_head", "prev_lifelines", "prev_fleet", "cure_list", "hub_table", "order_card_ui", "fab_cards", "alert_list", "alert_detail", "tower_transcript", "tower_option_cards", "tower_approval",
-       "kaizen_tiles", "kaizen_rules", "kaizen_transcript", "kaizen_dcr", "grow_passport", "grow_transcript",
-       "slot_buttons"]
+       "plant_chip", "crew_list", "alert_badge", "alert_stats", "queue_badge", "cure_badge", "queue_chip", "queue_stats", "queue_table", "queue_detail", "queue_log", "prev_head", "prev_lifelines", "prev_fleet", "cure_list", "hub_table", "order_card_ui", "fab_cards", "alert_list", "alert_detail", "src_agent"]
 
 STEPS = [
     ("mill_change", {"mill_change": 1}, ["mill_status", "mill_signals", "mill_incident", "alert_list"]),
@@ -34,16 +31,10 @@ STEPS = [
     ("ev_prev", {"ev_prev": 1}, ["queue_table", "queue_log", "prev_head", "prev_chart", "hub_table"]),
     ("ev_cure", {"ev_cure": 1}, ["queue_table", "cure_list", "alert_list", "order_card_ui"]),
     ("ev_fab", {"ev_fab": 1}, ["fab_cards", "queue_log"]),
-    ("src_motor", {"src_part": "DRIVE-MOTOR-SD"}, ["order_card_ui"]),
+    ("src_fan", {"src_part": "PN-1043"}, ["order_card_ui"]),
     ("po_cheapest", {"po_cheapest": 1}, ["order_card_ui", "hub_table", "queue_log"]),
     ("queue_sel", {"queue_sel": "JOB-1042"}, ["queue_detail"]),
-    ("tower_assess", {"tower_assess": 1}, ["tower_transcript", "tower_approval"]),
-    ("tower_approve", {"tower_approve": 1}, ["tower_transcript", "tower_approval"]),
-    ("kaizen_run", {"kaizen_run": 1}, ["kaizen_transcript", "kaizen_dcr", "kaizen_rules"]),
-    ("grow_read_tower", {"manual": "tower_drive_manual.md", "grow_read": 1}, ["grow_passport", "slot_buttons"]),
-    ("install_ae", {"install_ae": 1}, ["slot_buttons", "grow_transcript"]),
-    ("tower_42", {"tower_id": "42", "tower_assess": 2}, ["tower_transcript", "tower_chart"]),
-    ("grow_sign", {"grow_sign": 1}, ["grow_passport", "grow_transcript"]),
+    ("src_run", {"src_run": 1}, ["src_agent"]),
 ]
 
 
@@ -52,14 +43,14 @@ async def run(port: int) -> int:
             ".clientdata_url_port": str(port), ".clientdata_url_pathname": "/", ".clientdata_url_search": "",
             ".clientdata_url_hash_initial": "", ".clientdata_url_hash": "", ".clientdata_pixelratio": 1,
             ".clientdata_singletons": "", ".clientdata_allowDataUriScheme": True,
-            "tower_id": "7", "manual": "lathe_l2_manual.md", "prev_product": "T-07", "src_part": "SEAL-KIT-SD", "src_hub": "NORTH"}
+            "prev_product": "DS-07", "src_part": "PN-3307", "src_hub": "NORTH"}
     for p in PLOTS:
         init[f".clientdata_output_{p}_width"] = 760
         init[f".clientdata_output_{p}_height"] = 300
         init[f".clientdata_output_{p}_hidden"] = False
     for u in UIS:
         init[f".clientdata_output_{u}_hidden"] = False
-    for b in ["mill_change", "mill_assess", "mill_reset", "tower_assess", "kaizen_run", "grow_read", "grow_sign"]:
+    for b in ["mill_change", "mill_assess", "mill_reset", "src_run"]:
         init[b] = 0
     seen: dict = {}
     errors: dict = {}
@@ -92,13 +83,14 @@ async def run(port: int) -> int:
     if errors:
         print("ERRORS:", json.dumps(errors, indent=1)[:3000])
         return 1
-    must = ["mill_approval", "tower_approval", "kaizen_dcr", "grow_passport"]
+    must = ["mill_approval", "prev_head", "cure_list", "src_agent", "fab_cards"]
     missing = [m for m in must if m not in seen]
     if missing:
         print("MISSING:", missing)
         return 1
-    txt = json.dumps(seen.get("tower_transcript", ""))
-    print("tower 42 transcript mentions acoustic:", "acoustic" in txt)
+    txt = json.dumps(seen.get("prev_head", ""))
+    print("prevention shows the failure model's risk:", "FAILURE RISK 97%" in txt)
+    print("sourcing agent placed PO-7711:", "PO-7711" in json.dumps(seen.get("src_agent", "")))
     print("OK")
     return 0
 

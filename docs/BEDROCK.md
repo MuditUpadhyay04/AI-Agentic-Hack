@@ -62,7 +62,7 @@ Same terminal (env vars still set):
 ```
 
 Open http://localhost:8000 → **Parts & sourcing** → *Sourcing agent: work the queue*. The note under the
-result says `crew mode: bedrock`. The other pages (mill, towers) use the same model through the same env vars.
+result says `crew mode: bedrock`. The other agents (mill crew, Sourcing) use the same model through the same env vars.
 
 ## 5. What makes it "AWS agentic" (say this to the judges)
 

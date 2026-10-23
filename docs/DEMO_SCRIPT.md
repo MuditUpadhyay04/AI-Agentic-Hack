@@ -1,28 +1,25 @@
-# Demo script — 3 minutes, Run → Improve → Grow
+# Demo script — 3 minutes
 
-Rehearse with `python scripts/run_demo.py` (terminal) and the console. Record a backup video of the console
-after the 3:15 code freeze. Every number below is what the offline crew produces today; with Bedrock the
-words change, the numbers do not.
+Rehearse with the console (`shiny run app/app.py`) and `python scripts/run_demo.py`. The demo bar's buttons
+1–3 drive the story; Reset starts over. Every number is a tool result; with Bedrock the words change, the
+numbers do not.
 
 | Time | Beat | Screen | Say |
 |---|---|---|---|
-| 0:00–0:20 | Customer first | Why (press release) headline | "People who host solar towers don't want a dashboard; they want the energy they were promised and no surprises. Your mill and a tower die the same way — so we built a crew that keeps both running." |
-| 0:20–0:35 | Normal window | Run · Mill, before clicking | "AI4I's walls: power 3.5–9 kW, overstrain, heat, tool wear. Data window and labels are the published ones." |
-| 0:35–1:20 | Sensor change → Lift & Coast | *Harder steel lot arrives* → *Crew: assess* → envelope | "Torque 56 Nm: 2% from the power wall, ~5 parts. The Race Engineer doesn't just predict — it buys time: 1,400 rpm, 47 Nm, still inside both walls at shift change. $4,141 vs $4,542 to stop now vs $24,742 to run on." Approve → work order + PO under policy. |
-| 1:20–1:55 | Same crew, solar tower | Run · Towers → tower 7 → assess | "Lot-B grease, +33% energy per degree. 66% chance of a stall in wind before Thursday's route. Park & Price with our own energy model: park at 180° for $3 of energy instead of a $2,456 failure — and six more towers ride the same truck roll." Approve. |
-| 1:55–2:25 | Improve | Improve → Run Kaizen | "The crew turns repairs into R&D: lot B fails 6× as often; 15° steps give up 0.16% of energy and cut drive starts 85% — that's how ST-2 will track. And today's sensors already saw 35 of 38 past failures a week ahead. Nobody was watching." |
-| 2:25–2:45 | Grow (the Apple beat) | Grow → tower manual → install acoustic slot → Run · towers → 42 | "We design for hardware we haven't shipped. Each passport has empty slots; the agents already exist. Install acoustic emission and tower 42's bearing — invisible until now — lights up with 19 days left. The crew also prices which sensor is worth adding next." |
-| 2:45–3:00 | Close | Architecture | "Strands on AgentCore, tools under Policy, suppliers over A2A. Priced per tower, so the crew grows with every machine it onboards." |
+| 0:00–0:20 | The problem | Priority queue | "NXP runs equipment across fabs and assembly/test sites. A down tool costs output every hour, and a part that isn't nearby turns hours into days. PitCrew keeps one queue for every task and makes sure the part is already close." |
+| 0:20–0:45 | Maintenance | Priority queue | "Lifelines put routine jobs in the queue weeks ahead: a sensor module at 92% of rated life, a power board at 90%." |
+| 0:45–1:20 | Prevention | Demo 1 → Prevention | "Matthew's XGBoost model scores every machine's live reading. Dicing saw 07 just jumped to 97% failure risk: torque 52 Nm with 218 minutes of tool wear, far from its healthy peers. Its job moves to the top of routine work, the site is emailed, the part is reserved." |
+| 1:20–1:50 | Cure | Demo 2 → Cure | "Dicing saw 19 throws an overheat shutdown. Cure beats everything: cooling fan module pulled from Local hub North, technician rerouted, site lead and technician emailed with what to bring." |
+| 1:50–2:25 | Sourcing | Parts & sourcing → Sourcing agent | "The Sourcing agent on Bedrock works the queue: local hub, then central, then buys. It picks Vendor C — the cheapest that still arrives in time — over the fastest, and the $492 PO auto-approves under policy." |
+| 2:25–2:45 | Internal fab | Demo 3 → Internal fab | "Hari's model sees a Makino line degrading; in-house lead time slips, and Sourcing re-picks the cheapest option that still arrives in time." |
+| 2:45–3:00 | Close | Architecture | "Strands agents on Amazon Bedrock, deployed on AgentCore Runtime, tools under policy. Every task, every part, ready before it's needed." |
 
 ## Questions to expect
 
-- **"AI4I is synthetic."** That is why its walls are exact; on a real machine the passport's walls come
-  from the manual and get tightened by the Kaizen loop.
-- **"Your tower data is simulated."** Yes, and labelled. The energy numbers are from a two-wing field
-  model with placeholder ratings; the drive model's signatures come from field literature and
-  will be replaced by the fleet's own data — that is the Improve loop.
-- **"What if the agent is wrong?"** Setpoint changes and POs above $500 always need the foreman, and every
-  option shows its risk, margin and assumptions.
-- **"Why not just rules?"** The walls are rules on purpose. Agents choose between priced options, read
-  manuals, coordinate parts and people, and write new rules from history.
-- **"Cost to run?"** The Sentinel uses no model; tokens are spent per incident, not per sensor tick.
+- **"Is the data real?"** Each machine's reading is a real AI4I 2020 record scored by Matthew's trained model;
+  the fleet names, hubs, prices and lifelines are placeholders.
+- **"What if the agent is wrong?"** POs above $500 and every setpoint change need a person; every number on
+  screen comes from a tool, and the trace shows which.
+- **"Why not just rules?"** The math is rules on purpose. The agents choose, explain, coordinate parts and
+  people, and draft the messages.
+- **"Cost to run?"** Scoring and allocation use no LLM tokens; tokens are spent per incident, not per reading.

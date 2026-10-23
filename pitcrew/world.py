@@ -17,13 +17,9 @@ from pathlib import Path
 import numpy as np
 
 from . import mill as millmod
-from .decide import TowerEconomics, diagnose, park_and_price
-from .futures import ranking
-from .kaizen import design_change_request, lot_analysis, rediscover_ai4i, time_to_alarm_by_lot, tracking_tradeoff
 from .ops import ALERT_POLICY, Ops, policy_check
 from .passport import MANUALS, from_manual, install_slot, manuals, sign
 from .sourcing import Network, demo_network, rank
-from .tower import Fleet
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -56,16 +52,9 @@ class World:
         self.trace: list[dict] = []
         self.agent = "system"
         self.passports: dict = {}
-        self.installed_slots: tuple = ()
         self.mill_state = {"asset": "VM-07", "rpm": 1500.0, "torque": 56.0, "wear": 120.0, "d_temp": 8.2,
                            "creep": 0.3, "variant": "L", "parts_to_window": 30, "setpoint": "1500 rpm, feed 100%"}
-        self.tower_modes: dict = {}
-        self.econ = TowerEconomics()
         self.alerts: list[dict] = []
-
-    @cached_property
-    def fleet(self) -> Fleet:
-        return Fleet(seed=self.seed).run()
 
     @cached_property
     def network(self) -> Network:
@@ -117,37 +106,6 @@ class World:
         return self._rec("write_mill_setpoint", {"rpm": rpm, "torque": torque, "approved_by": approved_by},
                          {"written": True, "setpoint": self.mill_state["setpoint"], "policy": chk})
 
-    # ------------------------------------------------------------------ towers
-    def fleet_overview(self) -> dict:
-        td = self.fleet.today()
-        flagged = []
-        for tid in td.index:
-            d = diagnose(self.fleet, int(tid), self.installed_slots)
-            if d["primary"]:
-                flagged.append({"tower_id": int(tid), "site": td.loc[tid, "site"], "lot": td.loc[tid, "lot"],
-                                "detector": d["primary"]["detector"], "sensor": d["primary"]["sensor"],
-                                "value": round(d["primary"]["value"], 3), "alarm": d["primary"]["alarm"]})
-        return self._rec("fleet_overview", {"installed_slots": list(self.installed_slots)},
-                         {"towers": int(len(td)), "flagged": flagged, "date": str(self.fleet.weather.index[-1].date())})
-
-    def diagnose_tower(self, tower_id: int) -> dict:
-        d = diagnose(self.fleet, tower_id, self.installed_slots)
-        d.pop("series", None)
-        return self._rec("diagnose_tower", {"tower_id": tower_id}, d)
-
-    def price_tower_options(self, tower_id: int) -> dict:
-        r = park_and_price(self.fleet, tower_id, self.ops, self.econ, runs=200, slots=self.installed_slots)
-        r["diagnosis"].pop("series", None)
-        return self._rec("price_tower_options", {"tower_id": tower_id}, r)
-
-    def set_tower_mode(self, tower_id: int, mode: str, approved_by: str) -> dict:
-        chk = policy_check("park_tower" if mode == "park" else "write_setpoint")
-        if chk["needs_human"] and not approved_by:
-            return self._rec("set_tower_mode", {"tower_id": tower_id, "mode": mode}, {"written": False, "policy": chk})
-        self.tower_modes[tower_id] = mode
-        return self._rec("set_tower_mode", {"tower_id": tower_id, "mode": mode, "approved_by": approved_by},
-                         {"written": True, "mode": mode, "policy": chk})
-
     # ------------------------------------------------------------------ supply + people
     def check_stock(self, pn: str) -> dict:
         return self._rec("check_stock", {"pn": pn}, self.ops.stock(pn))
@@ -164,7 +122,7 @@ class World:
         return self._rec("draft_po", {"pn": pn, "qty": qty, "supplier": supplier},
                          self.ops.draft_po(pn, qty, supplier, unit_usd, lead_days, extra_usd))
 
-    def next_route_day(self, base: str = "DFW") -> dict:
+    def next_route_day(self, base: str = "Field") -> dict:
         return self._rec("next_route_day", {"base": base}, self.ops.next_route_day(base))
 
     def create_work_order(self, asset: str, title: str, due: str, tech: str, parts: list, evidence: list) -> dict:
@@ -173,6 +131,14 @@ class World:
 
     def approve(self, ref: str, who: str = "foreman") -> dict:
         return self._rec("approve", {"ref": ref, "who": who}, self.ops.approve(ref, who))
+
+    # ------------------------------------------------------------------ prevention (Matthew's failure model)
+    def predict_failure(self, record_udi: int) -> dict:
+        """Failure risk of one equipment reading (an AI4I 2020 record) from Matthew's XGBoost model."""
+        from .contracts import _failure_model, failure_risk
+
+        return self._rec("predict_failure", {"record_udi": record_udi},
+                         failure_risk(f"AI4I-{record_udi}", _failure_model().record(int(record_udi))))
 
     # ------------------------------------------------------------------ sourcing (hubs + vendors)
     def job_queue(self) -> dict:
@@ -225,32 +191,6 @@ class World:
         a.update(status="escalated", escalated=True, escalated_at=time.strftime("%H:%M:%S"))
         return self._rec("escalate_alert", {"id": alert_id}, a)
 
-    # ------------------------------------------------------------------ improve
-    def kaizen_rules(self) -> dict:
-        return self._rec("kaizen_rules", {}, rediscover_ai4i())
-
-    def kaizen_lots(self) -> dict:
-        lots = lot_analysis(self.fleet).reset_index().to_dict(orient="records")
-        tta = time_to_alarm_by_lot(self.fleet).reset_index().to_dict(orient="records")
-        return self._rec("kaizen_lots", {}, {"lots": lots, "fresh_grease_to_alarm": tta})
-
-    def sensor_futures(self) -> dict:
-        rk, rp, ty = ranking(self.fleet, self.econ)
-        crew_value = 0.0
-        if len(rp):
-            crew_value = float(rp[rp["saved_today"]]["saving_usd"].sum() / ty)
-        return self._rec("sensor_futures", {}, {"tower_years": round(ty, 1), "failures": int(len(rp)),
-                                                "caught_with_todays_sensors": int(rp["saved_today"].sum()) if len(rp) else 0,
-                                                "crew_value_usd_per_tower_year": round(crew_value, 1),
-                                                "slots": rk.to_dict(orient="records")})
-
-    def design_change_request(self) -> dict:
-        rk, _, _ = ranking(self.fleet, self.econ)
-        return self._rec("design_change_request", {}, design_change_request(self.fleet, rk))
-
-    def tracking_tradeoff(self) -> dict:
-        return self._rec("tracking_tradeoff", {}, tracking_tradeoff())
-
     # ------------------------------------------------------------------ grow
     def list_manuals(self) -> dict:
         return self._rec("list_manuals", {}, {"manuals": manuals()})
@@ -271,8 +211,6 @@ class World:
         p = install_slot(self.passports[asset_id], signal_keyword)
         self.passports[asset_id] = p
         unlocked = [d for s in p["slots"] if s["status"] == "installed" for d in s["unlocks"]]
-        if asset_id.startswith("ST-1"):
-            self.installed_slots = tuple(sorted(set(self.installed_slots) | set(unlocked)))
         return self._rec("install_slot", {"asset_id": asset_id, "slot": signal_keyword},
                          {"asset_id": asset_id, "detectors_live": unlocked})
 

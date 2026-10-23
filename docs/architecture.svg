@@ -20,7 +20,7 @@
   <rect x="34" y="110" width="150" height="70" rx="8" class="box"/>
   <text x="46" y="132" class="h">Signals</text>
   <text x="46" y="150" class="s">Mill: AI4I stream</text>
-  <text x="46" y="166" class="s">Tower: current, encoder</text>
+  <text x="46" y="166" class="s">Fleet: AI4I readings</text>
   <rect x="210" y="110" width="130" height="70" rx="8" class="agent"/>
   <text x="222" y="132" class="h">Sentinel</text><text x="222" y="150" class="s">Monitor</text><text x="222" y="166" class="s">margin to each wall</text>
   <rect x="362" y="110" width="140" height="70" rx="8" class="agent"/>
@@ -41,11 +41,11 @@
   <text x="222" y="242" class="s">CMMS / work orders · inventory · purchase orders · technician roster · setpoint writer — POs over $500 and any setpoint change need the foreman</text>
 
   <rect x="20" y="284" width="520" height="120" rx="10" class="lane"/>
-  <text x="34" y="306" class="h">IMPROVE (weekly)</text>
+  <text x="34" y="306" class="h">PREVENTION + SUPPLY</text>
   <rect x="34" y="320" width="492" height="70" rx="8" class="agent"/>
-  <text x="46" y="342" class="h">Kaizen agent</text>
-  <text x="46" y="360" class="s">rules from data (AI4I) · supplier-lot rates · Sensor Futures</text>
-  <text x="46" y="376" class="s">→ design-change request for the Design studio / Tower lab (ST-2)</text>
+  <text x="46" y="342" class="h">Failure model (Matthew) · Sourcing agent</text>
+  <text x="46" y="360" class="s">XGBoost risk per machine → priority queue → local / central hub</text>
+  <text x="46" y="376" class="s">→ cheapest-in-time vs fastest verified vendor · POs under policy</text>
 
   <rect x="560" y="284" width="520" height="120" rx="10" class="lane"/>
   <text x="574" y="306" class="h">GROW (per machine, sensor, supplier, site)</text>
@@ -63,7 +63,7 @@
   <rect x="466" y="454" width="200" height="74" rx="8" class="k"/>
   <text x="478" y="476" class="h">Asset passports</text><text x="478" y="494" class="s">signed limits + slots</text><text x="478" y="510" class="s">(the unit of growth)</text>
   <rect x="682" y="454" width="200" height="74" rx="8" class="k"/>
-  <text x="694" y="476" class="h">Energy model</text><text x="694" y="494" class="s">Field model table:</text><text x="694" y="510" class="s">kWh by azimuth and day</text>
+  <text x="694" y="476" class="h">Models</text><text x="694" y="494" class="s">failure (XGBoost, AI4I)</text><text x="694" y="510" class="s">machine downtime (fab)</text>
   <rect x="898" y="454" width="166" height="74" rx="8" class="k"/>
   <text x="910" y="476" class="h">Observability</text><text x="910" y="494" class="s">AgentCore traces,</text><text x="910" y="510" class="s">cost per decision</text>
 </svg>

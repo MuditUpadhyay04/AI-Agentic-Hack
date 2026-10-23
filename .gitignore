@@ -8,3 +8,4 @@ data/private/
 .env
 *.log
 *.egg-info/
+Project.zip

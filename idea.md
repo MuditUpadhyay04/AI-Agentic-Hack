@@ -7,10 +7,9 @@ Status: working idea, 2026-10-23 (hackathon day). Written to be handed to Claude
 three feed **one priority queue** of jobs; and a supply chain built around a **central hub and local hubs**
 makes sure the part is already near the site before the technician leaves.
 
-**Customer for the challenge: NXP Semiconductors.** The v0.1 demo used a simulated solar-tower fleet as
-the "product in the field"; for NXP the story needs to be re-pointed at semiconductor manufacturing (see
-open questions in section 12). "Internal fab" in the sketch fits a wafer fab directly: tool downtime there
-hits manufacturing and the supply chain.
+**Customer for the challenge: NXP Semiconductors.** The products in the field are NXP's semiconductor
+equipment (dicing saws, wire bonders, test handlers, probers) at fab and assembly/test sites. "Internal fab"
+in the sketch is the factory itself: tool downtime there hits manufacturing and the supply chain.
 
 Current UI design canvas (four boards from v0.1):
 https://claude.ai/artifact/1S9Qbm5vMK6qFEgKWrNb3n
@@ -38,12 +37,12 @@ three service loops plus a supply chain. The whiteboard sketch:
 
 | v0.1 | v0.2 | What happens to it |
 |---|---|---|
-| Run · Towers (Sentinel → Diagnostician → Race Engineer → Quartermaster → Dispatcher) | **Prevention** and **Cure** | Same crew pattern; detection becomes "this product vs its peers" and "this product threw an error code" |
+| Simulated field fleet (removed) | **Prevention** and **Cure** | Same crew pattern on NXP equipment; detection is Matthew's failure model and "this machine threw an error code" |
 | — | **Maintenance** | New: component lifelines create scheduled jobs ahead of time |
 | Quartermaster (`ops.py`: one parts room, `best_quote`) | **Sourcing** | Grows into a multi-hub inventory + demand forecast + vendor comparison (cheapest vs fastest) |
 | Run · Mill (VM-07, Lift & Coast, AI4I data) | **Internal fab** | Becomes the factory view: machine downtime → production and spare-part lead times |
 | Operator alerts board (Comms agent) | **Cure notifications** | Email goes out through **SendGrid** |
-| Improve (Kaizen), Grow (passports, sensor slots) | Out of scope for now | Keep as stretch unless the team decides otherwise |
+| Improve (Kaizen), Grow (passports, sensor slots) | Improve removed; Grow kept in the crew only | Stretch |
 
 What stays: tools are the only way agents touch state, every number on an approval card comes from a tool
 result, policy gates (POs above a limit need a human), offline fallback when Bedrock fails.
@@ -96,14 +95,13 @@ Three ways a job is born, one queue, one parts system:
 due, a job lands in the queue early enough that parts and people are ready.
 
 - **Lifeline** = rated life of the component (from the manual or datasheet; public-safe values only) in
-  whatever unit wears it out: calendar days, operating hours, cycles (drive starts), energy throughput.
+  whatever unit wears it out: calendar days, operating hours, cycles (spindle starts), parts processed.
 - **Consumed life** = usage since install, from telemetry (e.g. hours run, starts counted).
 - **Due date** = date when consumed life reaches a threshold (e.g. 90% of rated life), projected from the
   recent usage rate.
 - **Lead window** = how far ahead the job is created: at least the longest part lead time plus route
   planning time (e.g. 30 days), so Sourcing has room to buy at the cheapest price.
-- **Batching:** jobs at the same site inside the same window ride on one truck roll (v0.1 already batches
-  tower visits on the Thursday/Friday DFW route).
+- **Batching:** jobs at the same site inside the same window ride on one technician visit.
 
 Output into the queue: `job(type=maintenance, product, component, due_by, parts[], est_hours, site)`.
 
@@ -112,36 +110,24 @@ The teammate owning this pipeline defines the lifeline table; the rest of the sy
 
 ---
 
-## 4. Prevention — product A vs product B
+## 4. Prevention — Matthew's failure model
 
-**Idea:** a product that starts behaving differently from its peers is probably wearing faster than its
-lifeline assumes. The more different it is, the sooner it should be visited.
+**Idea:** score every machine's live reading for failure; the higher the risk, the sooner it is visited.
 
-**Peer group (B):** same model, same site or region (same weather), similar age. Comparing against peers
-instead of a fixed threshold cancels weather and season: if every tower at a site makes less energy on a
-cloudy day, none of them is flagged.
+**Model (built):** XGBoost classifier trained on AI4I 2020 (`failure_model/`), features: machine type (L/M/H),
+air temperature, process temperature, spindle speed, torque, tool wear. Output: failure probability.
 
-**Signals compared (A vs B median):**
-
-| Signal | Why it matters | Bad direction |
+| Failure risk | Meaning | What the crew does |
 |---|---|---|
-| Telemetry messages per hour | Fewer messages = comms or controller trouble, or a product going dark | Lower |
-| Error codes per day (by code family) | Warnings usually rise before a hard failure | Higher |
-| Performance ratio (actual / expected output) | Losing output means losing the customer's money | Lower |
-| Effort per unit of work (e.g. drive energy per degree moved) | Rising friction / wear (v0.1 already models this for towers) | Higher |
+| < 40% | Normal | Nothing |
+| 40 – 70% | Watch | Add the part to predicted demand (weighted by the risk) so Sourcing stocks it |
+| ≥ 70% | Act | Create or promote a job; notify the site; reserve parts — if the local hub doesn't have them, start a transfer from the nearest hub that does |
 
-**Deviation score:** robust z-score of A against its peers, per signal, then take the worst one.
+**Explaining the score:** each sensor is compared with healthy AI4I records of the same type (robust |z|), and the
+screen names the reading furthest from its peers (e.g. tool wear 218 min vs a peer median of ~108).
 
-```
-z_signal = (x_A - median_B) / (1.4826 * MAD_B)       # signed so that "worse" is positive
-D        = max over signals of z_signal, also trend over the last 7 days
-```
-
-| D | Meaning | What the crew does |
-|---|---|---|
-| < 2 | Normal | Nothing |
-| 2 – 3 | Watch | Bring the next maintenance job forward; check parts at the local hub |
-| > 3 | Act | Create or promote a job; due date from the remaining-life estimate; notify the local site; reserve parts — if the local hub doesn't have them, start a transfer from the nearest hub that does |
+**Demo:** each machine's reading is a real AI4I record; the drift event swaps in record 162 (torque 52.3 Nm,
+218 min tool wear, an overstrain failure) and the model scores it 97%.
 
 **Parts diversion when a job is promoted:**
 1. Local hub has it → reserve.
@@ -184,8 +170,8 @@ twice.
 |---|---|
 | `job_id` | `JOB-1042` |
 | `type` | `cure` / `prevention` / `maintenance` |
-| `product_id`, `site`, `local_hub` | Tower 19, Data center lot, Local hub North |
-| `component`, `parts[]` | slew drive seal, `SEAL-KIT-SD ×1` |
+| `product_id`, `site`, `local_hub` | DS-19 (Dicing saw 19), Fab North, Local hub North |
+| `component`, `parts[]` | cooling fan module, `PN-1043 ×1` |
 | `due_by` | date |
 | `priority` | number, higher first |
 | `parts_status` | `reserved at local hub` / `transfer in transit (ETA)` / `on order (PO, ETA)` / `short` |
@@ -239,8 +225,8 @@ order_by(v)     = need_by - lead_time(v) - transit(v -> hub)
 
 **Worked example** (placeholder numbers, not real prices):
 
-Part `SEAL-KIT-SD` at Local hub North, today Oct 23. On hand 3, reserved 1 → 2 available, nothing inbound.
-Jobs: maintenance Oct 28 (1), maintenance Nov 4 (1), prevention-flagged tower ~Nov 2 (p = 0.7 → 0.7).
+Part `PN-3307` (sensor module) at Local hub North, today Oct 23. On hand 3, reserved 1 → 2 available, nothing inbound.
+Jobs: maintenance Oct 28 (1), maintenance Nov 4 (1), prevention-flagged machine ~Nov 2 (p = 0.7 → 0.7).
 Buffer 2.
 
 - Need over 30 days = 1 + 1 + 0.7 + 2 = 4.7; position = 2 → shortfall 2.7 → order 3 (no MOQ).
@@ -285,8 +271,8 @@ new products and of the spare parts we make in-house?
   (replenishment), local ↔ local (urgent lateral transfer for Cure/Prevention).
 - Needs: a transit-time table between hubs and from each vendor to each hub.
 
-For the demo: 1 central hub + 3 local hubs, one per v0.1 site cluster (DFW warehouse roof, Data center lot,
-Open field Ellis County — 48 simulated towers in `pitcrew/tower.py`). Names and locations are placeholders.
+For the demo: 1 central hub + 3 local hubs (North, East, South) serving Fab North, Assembly & test East and
+Fab South, with six machines (`pitcrew/contracts.py: Plant`). Names and locations are placeholders.
 
 ---
 
@@ -294,7 +280,7 @@ Open field Ellis County — 48 simulated towers in `pitcrew/tower.py`). Names an
 
 | Agent | Does | Built on |
 |---|---|---|
-| Sentinel | Reads telemetry + error codes for every product; computes peer deviation; opens Cure incidents | v0.1 Sentinel, `tower.py` detectors |
+| Sentinel | Scores every machine with the failure model (`predict_failure`); reads error codes; opens Cure incidents | v0.1 Sentinel + Matthew's model |
 | Diagnostician | Error code / signal → likely component and parts list, citing the manual | v0.1 Diagnostician, `search_manual` |
 | Scheduler (new) | Owns the priority queue: lifeline jobs, promotions, merges, re-ranks | Teammate's maintenance pipeline |
 | Quartermaster | Hub inventory, reservations, transfers, the sourcing model (cheapest vs fastest), POs | v0.1 Quartermaster, `ops.py` |
@@ -356,19 +342,16 @@ How the existing design boards map:
 
 ## 10. Demo story (about 3 minutes)
 
-1. **Network.** Central hub, three local hubs, 48 towers. Queue shows maintenance jobs created from
+1. **Network.** Central hub, three local hubs, six machines. Queue shows maintenance jobs created from
    lifelines weeks ahead; parts already reserved.
-2. **Prevention.** Tower 7 is sending 30% fewer messages and 4× the warning codes of its 15 peers at the
-   same site → D = 3.4 → its maintenance job jumps from next month to Thursday's route. Local hub has no
-   seal kit → transfer from central, arrives tomorrow. Site lead gets an email.
-3. **Cure.** Tower 19 throws a stall error → top of the queue → SendGrid email to site lead and technician,
-   acknowledgment tracked, escalation timer visible. Part pulled from the local hub; technician rerouted.
-4. **Sourcing.** Those two jobs pushed Local hub North's seal kits below demand + buffer → order card:
-   cheapest in time vs fastest, order by Oct 25. Under $500 → auto-approved.
-5. **Internal fab.** A mill in the factory is near its power limit → Lift & Coast keeps it running to shift
-   change → in-house drive production slips 2 days → Sourcing switches one part to an outside vendor.
-
-(All numbers above are illustrative; in the app every number must come from a tool result.)
+2. **Prevention.** Matthew's model scores Dicing saw 07 at 97% failure risk (torque 52 Nm, 218 min tool
+   wear) → its sensor-module job jumps from next month to the top of routine work. Site lead gets an email.
+3. **Cure.** Dicing saw 19 throws an overheat shutdown → top of the queue → email to site lead and
+   technician, acknowledgment tracked. Cooling fan module pulled from Local hub North; technician rerouted.
+4. **Sourcing.** The Sourcing agent works the queue: local hub, then central, then buys — cheapest verified
+   vendor that arrives in time vs the fastest. Under $500 → auto-approved.
+5. **Internal fab.** Hari's model flags a Makino line → in-house lead time slips → Sourcing re-picks the
+   cheapest option that still arrives in time.
 
 ---
 
@@ -376,9 +359,9 @@ How the existing design boards map:
 
 | Data | Used by | Demo source |
 |---|---|---|
-| Products: id, model, site, install date, components | All | `tower.py` Fleet (48 towers, 3 sites, lots A/B/C) |
+| Products: id, model, site, install date, components | All | `contracts.py: Plant` (six machines, placeholder) |
 | Component lifelines: rated life + unit | Maintenance | Manuals in `data/manuals/` (public-safe values) |
-| Telemetry: per product per hour — message count, performance, effort | Prevention | Simulated from `tower.py` |
+| Sensor readings: type, temperatures, spindle speed, torque, tool wear | Prevention | Real AI4I 2020 records |
 | Error codes: code, severity, product, time | Cure, Prevention | Simulated; need an error-code table |
 | Hubs: location, transit times | Sourcing | Placeholder table |
 | Inventory per hub per part | Sourcing | Extend `ops.py` `Part` with `hub` |
@@ -389,9 +372,7 @@ How the existing design boards map:
 
 ## 12. Open questions for the team
 
-- What is the "product in the field" for NXP? Options: (a) fab and test equipment across NXP's sites
-  (components with lifelines, spare parts at hubs — closest to this plan); (b) NXP chips in customers'
-  systems reporting telemetry and error codes; (c) keep the simulated solar towers as a stand-in.
+- Which NXP equipment and sites should the demo fleet name, and which parts matter most?
 - Which hackathon datasets/APIs does NXP provide, and do the walls/signals in `mill.py` (AI4I) still fit?
 - Who owns the UI, and which board style (A clean / B accent / C race) do we keep?
 - How many hubs and where? What are the transit times?
@@ -400,7 +381,6 @@ How the existing design boards map:
 - Downtime cost per hour per product (needed to rank Cure jobs against each other).
 - The interface between Maintenance (teammate), Sourcing (Mudit) and Internal fab (Hari): agree on the
   `job` and `fab_forecast` shapes in sections 3, 6 and 7b before splitting up.
-- Do Kaizen (Improve) and passports (Grow) from v0.1 stay in the pitch as a closing "and it learns" beat?
 
 ---
 

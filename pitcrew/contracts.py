@@ -4,7 +4,7 @@ The console calls only the functions in this file. Each section names its owner 
 expects; swap the placeholder body for the real call and the screens pick it up unchanged.
 
     Internal fab   (Hari)     fab_status, fab_forecast       real model: machine_downtime_model/predict.py
-    Prevention     (Matthew)  peer_deviation                 placeholder (AI4I model to plug in)
+    Prevention     (Matthew)  failure_risk                   real model: failure_model/predict.py (XGBoost, AI4I)
     Maintenance    (tbd)      lifelines, maintenance_jobs    placeholder (lifeline pipeline to plug in)
     Sourcing/Cure  (Mudit)    order_card, cure_events        placeholder (follows idea.md section 7a)
     Priority queue (console)  queue                          real: merges the three loops (idea.md section 6)
@@ -17,8 +17,8 @@ from __future__ import annotations
 import copy
 import datetime as dt
 import math
-import statistics as stats
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 from .ops import TODAY
@@ -35,18 +35,18 @@ def day(n: int) -> dt.date:
 
 # ============================================================================ Internal fab (Hari)
 FAB_MACHINES = {
-    "MK-L1": {"name": "Makino L1", "line": "Shopfloor-L1", "makes": ["GEAR-SET-SD"],
+    "MK-L1": {"name": "Makino L1", "line": "Shopfloor-L1", "makes": ["PN-6031"],
               "reading": {"Hydraulic_Pressure(bar)": 130.0, "Torque(Nm)": 32.0}},
-    "MK-L2": {"name": "Makino L2", "line": "Shopfloor-L2", "makes": ["HOUSING-SD"],
+    "MK-L2": {"name": "Makino L2", "line": "Shopfloor-L2", "makes": ["PN-5120"],
               "reading": {"Hydraulic_Pressure(bar)": 125.0, "Torque(Nm)": 30.0}},
-    "MK-L3": {"name": "Makino L3", "line": "Shopfloor-L3", "makes": ["DRIVE-MOTOR-SD"],
+    "MK-L3": {"name": "Makino L3", "line": "Shopfloor-L3", "makes": ["PN-1043"],
               "reading": {"Hydraulic_Pressure(bar)": 128.0, "Torque(Nm)": 31.0}},
 }
 # Hari's example of a failing machine (machine_downtime_model/example.py, FAILING_MACHINE).
 FAILING_READING = {"Hydraulic_Pressure(bar)": 80.13, "Coolant_Pressure(bar)": 4.79, "Coolant_Temperature": 23.0,
                    "Spindle_Speed(RPM)": 19964.0, "Voltage(volts)": 348.0, "Torque(Nm)": 24.63, "Cutting(kN)": 2.84}
 IN_HOUSE_BASE_LEAD = 3  # days to make a part in-house when the machine is healthy (placeholder)
-IN_HOUSE_UNIT_USD = {"DRIVE-MOTOR-SD": 300.0, "GEAR-SET-SD": 90.0, "HOUSING-SD": 120.0}  # internal cost (placeholder)
+IN_HOUSE_UNIT_USD = {"PN-1043": 300.0, "PN-6031": 90.0, "PN-5120": 120.0}  # internal cost (placeholder)
 RESTORE_DAYS = 5  # when only the emergency buffer is short, restore it within this many days
 
 _predict = None
@@ -89,35 +89,56 @@ def fab_forecast(part: str, statuses: dict) -> dict:
 
 
 # ============================================================================ Prevention (Matthew)
-SIGNALS = {  # signal: (label, worse direction: +1 higher is worse, -1 lower is worse)
-    "msgs_per_hour": ("Telemetry messages / hour", -1),
-    "warnings_per_day": ("Warning codes / day", +1),
-    "performance_ratio": ("Performance ratio", -1),
-    "effort_per_deg": ("Drive energy per degree", +1),
+ACT, WATCH = 0.70, 0.40  # failure probability: >= ACT pulls the job forward, >= WATCH adds predicted demand
+SENSORS = {  # AI4I feature: label on screen
+    "Air temperature [K]": "Air temperature (K)", "Process temperature [K]": "Process temperature (K)",
+    "Rotational speed [rpm]": "Spindle speed (rpm)", "Torque [Nm]": "Torque (Nm)", "Tool wear [min]": "Tool wear (min)",
 }
+_failure = None
 
 
-def _peer_values(base: float, spread: float, n: int = 15) -> list[float]:
-    return [round(base + spread * math.sin(1.7 * i + 0.4), 3) for i in range(n)]
+def _failure_model():
+    global _failure
+    if _failure is None:
+        d = str(ROOT / "failure_model")
+        if d not in sys.path:
+            sys.path.insert(0, d)
+        import predict as matthew  # failure_model/predict.py
+
+        _failure = matthew
+    return _failure
 
 
-def peer_deviation(product: dict, peers: dict) -> dict:
-    """Matthew (placeholder until the AI4I model lands): robust z of a product vs its peers, worst signal wins.
+@lru_cache(maxsize=3)
+def _healthy_peers(machine_type: str):
+    """Healthy AI4I records of the same machine type (L/M/H): the peer group a reading is compared with."""
+    df = _failure_model().ai4i()
+    return df[(df["Type"] == machine_type) & (df["Machine failure"] == 0)]
 
-    z = (x - median_peers) / (1.4826 * MAD_peers), signed so that worse is positive (idea.md section 4)."""
+
+def failure_risk(product_id: str, reading: dict) -> dict:
+    """Matthew: XGBoost failure probability for a product's current AI4I reading, plus each sensor against healthy
+    peers of the same type (robust |z|) so the screen can say which reading is off."""
+    try:
+        risk = _failure_model().predict_from_sensor_data(reading)["failure_probability"]
+    except Exception as exc:  # model or its libraries missing: say so, never guess a risk
+        return {"product": product_id, "risk": None, "action": "normal", "worst_signal": "model unavailable",
+                "signals": [], "peer_count": 0, "source": f"failure model unavailable ({type(exc).__name__})"}
+    peers = _healthy_peers(reading["Type"])
     rows = []
-    for key, (label, sign) in SIGNALS.items():
+    for key, label in SENSORS.items():
         vals = peers[key]
-        med = stats.median(vals)
-        mad = stats.median(abs(v - med) for v in vals) or 1e-9
-        z = sign * (product[key] - med) / (1.4826 * mad)
-        rows.append({"signal": key, "label": label, "value": product[key], "peer_median": round(med, 3),
-                     "peer_low": min(vals), "peer_high": max(vals), "z": round(z, 2)})
+        med = float(vals.median())
+        mad = float((vals - med).abs().median()) or 1e-9
+        rows.append({"signal": key, "label": label, "value": round(float(reading[key]), 1),
+                     "peer_median": round(med, 1), "peer_low": round(float(vals.quantile(0.05)), 1),
+                     "peer_high": round(float(vals.quantile(0.95)), 1),
+                     "z": round(abs(float(reading[key]) - med) / (1.4826 * mad), 2)})
     worst = max(rows, key=lambda r: r["z"])
-    d = worst["z"]
-    action = "act" if d > 3 else "watch" if d >= 2 else "normal"
-    return {"product": product["id"], "D": round(d, 2), "worst_signal": worst["label"], "action": action,
-            "signals": rows, "peer_count": len(peers[next(iter(SIGNALS))]), "source": PLACEHOLDER}
+    action = "act" if risk >= ACT else "watch" if risk >= WATCH else "normal"
+    return {"product": product_id, "risk": risk, "action": action, "worst_signal": worst["label"], "signals": rows,
+            "peer_count": len(peers), "machine_type": reading["Type"],
+            "source": "failure_model (Matthew: XGBoost on AI4I 2020)"}
 
 
 # ============================================================================ Maintenance (owner tbd)
@@ -128,28 +149,28 @@ def lifelines(product_id: str, plant: "Plant") -> list[dict]:
 
 # ============================================================================ Sourcing + Cure (Mudit)
 ERROR_CODES = {  # placeholder table: which codes mean "down" (Cure) vs "warning" (a Prevention signal)
-    "E-STALL": {"meaning": "Drive stalled under load", "kind": "down", "component": "drive motor",
-                "parts": [["DRIVE-MOTOR-SD", 1]], "downtime_usd_per_h": 18.0},
+    "E-OVHT": {"meaning": "Overheat shutdown (heat dissipation)", "kind": "down", "component": "cooling fan module",
+               "parts": [["PN-1043", 1]], "downtime_usd_per_h": 1200.0},
     "W-COMM": {"meaning": "Telemetry gaps", "kind": "warning", "component": "controller", "parts": []},
-    "W-FRIC": {"meaning": "Drive friction above baseline", "kind": "warning", "component": "slew drive seal",
-               "parts": [["SEAL-KIT-SD", 1]]},
+    "W-TORQ": {"meaning": "Spindle torque above baseline", "kind": "warning", "component": "spindle sensor module",
+               "parts": [["PN-3307", 1]]},
 }
 HUBS = {
     "CENTRAL": {"name": "Central hub (factory)", "kind": "central"},
-    "NORTH": {"name": "Local hub North", "kind": "local", "sites": ["DFW warehouse roof"]},
-    "EAST": {"name": "Local hub East", "kind": "local", "sites": ["Data center lot"]},
-    "SOUTH": {"name": "Local hub South", "kind": "local", "sites": ["Open field, Ellis County"]},
+    "NORTH": {"name": "Local hub North", "kind": "local", "sites": ["Fab North"]},
+    "EAST": {"name": "Local hub East", "kind": "local", "sites": ["Assembly & test East"]},
+    "SOUTH": {"name": "Local hub South", "kind": "local", "sites": ["Fab South"]},
 }
 TRANSIT_DAYS = {("CENTRAL", "NORTH"): 1, ("CENTRAL", "EAST"): 1, ("CENTRAL", "SOUTH"): 2,
                 ("NORTH", "EAST"): 1, ("NORTH", "SOUTH"): 2, ("EAST", "SOUTH"): 1}
 VENDORS = {  # authorized vendors per part (placeholder prices: idea.md worked example)
-    "SEAL-KIT-SD": [{"vendor": "Vendor X", "unit_usd": 58.0, "lead_days": 10, "ship_usd": 0.0},
-                    {"vendor": "DriveParts TX", "unit_usd": 65.0, "lead_days": 3, "ship_usd": 0.0},
-                    {"vendor": "Vendor Y", "unit_usd": 72.0, "lead_days": 1, "ship_usd": 0.0}],
-    "GREASE-KIT-SD": [{"vendor": "Lube Supply", "unit_usd": 22.0, "lead_days": 4, "ship_usd": 8.0},
-                      {"vendor": "Vendor Y", "unit_usd": 31.0, "lead_days": 1, "ship_usd": 0.0}],
-    "DRIVE-MOTOR-SD": [{"vendor": "MotionCo", "unit_usd": 410.0, "lead_days": 6, "ship_usd": 25.0},
-                       {"vendor": "DriveParts TX", "unit_usd": 465.0, "lead_days": 2, "ship_usd": 0.0}],
+    "PN-3307": [{"vendor": "Vendor X", "unit_usd": 58.0, "lead_days": 10, "ship_usd": 0.0},
+                {"vendor": "Vendor B", "unit_usd": 65.0, "lead_days": 3, "ship_usd": 0.0},
+                {"vendor": "Vendor Y", "unit_usd": 72.0, "lead_days": 1, "ship_usd": 0.0}],
+    "PN-2210": [{"vendor": "Vendor E", "unit_usd": 22.0, "lead_days": 4, "ship_usd": 8.0},
+                {"vendor": "Vendor Y", "unit_usd": 31.0, "lead_days": 1, "ship_usd": 0.0}],
+    "PN-1043": [{"vendor": "Vendor F", "unit_usd": 410.0, "lead_days": 6, "ship_usd": 25.0},
+                {"vendor": "Vendor B", "unit_usd": 465.0, "lead_days": 2, "ship_usd": 0.0}],
 }
 
 
@@ -214,52 +235,53 @@ class Plant:
     def __init__(self):
         self.events: list[str] = []
         self.fab_readings = {k: dict(v["reading"]) for k, v in FAB_MACHINES.items()}
+        # NXP equipment at fab and assembly/test sites (placeholder fleet). Each reading is a real AI4I 2020 record
+        # (UDI), scored by Matthew's model; Type L/M/H is the AI4I quality variant.
         self.products = {
-            "T-07": {"id": "T-07", "name": "Tower 7", "hub": "NORTH", "site": "DFW warehouse roof"},
-            "T-19": {"id": "T-19", "name": "Tower 19", "hub": "NORTH", "site": "DFW warehouse roof"},
-            "T-23": {"id": "T-23", "name": "Tower 23", "hub": "NORTH", "site": "DFW warehouse roof"},
-            "T-31": {"id": "T-31", "name": "Tower 31", "hub": "NORTH", "site": "DFW warehouse roof"},
-            "T-12": {"id": "T-12", "name": "Tower 12", "hub": "EAST", "site": "Data center lot"},
-            "T-42": {"id": "T-42", "name": "Tower 42", "hub": "SOUTH", "site": "Open field, Ellis County"},
+            "DS-07": {"id": "DS-07", "name": "Dicing saw 07", "hub": "NORTH", "site": "Fab North", "udi": 3},
+            "DS-19": {"id": "DS-19", "name": "Dicing saw 19", "hub": "NORTH", "site": "Fab North", "udi": 4},
+            "WB-23": {"id": "WB-23", "name": "Wire bonder 23", "hub": "NORTH", "site": "Fab North", "udi": 6},
+            "WB-31": {"id": "WB-31", "name": "Wire bonder 31", "hub": "NORTH", "site": "Fab North", "udi": 9},
+            "TH-12": {"id": "TH-12", "name": "Test handler 12", "hub": "EAST", "site": "Assembly & test East", "udi": 11},
+            "PR-42": {"id": "PR-42", "name": "Wafer prober 42", "hub": "SOUTH", "site": "Fab South", "udi": 19},
         }
-        healthy = {"msgs_per_hour": 60.0, "warnings_per_day": 1.0, "performance_ratio": 0.97, "effort_per_deg": 1.0}
-        self.telemetry = {k: dict(healthy) for k in self.products}
-        self.peers = {"msgs_per_hour": _peer_values(60, 3), "warnings_per_day": _peer_values(1.0, 0.5),
-                      "performance_ratio": _peer_values(0.97, 0.015), "effort_per_deg": _peer_values(1.0, 0.05)}
+        self.readings = {k: _failure_model().record(v["udi"]) for k, v in self.products.items()}
         self.lifeline_table = {
-            "T-31": [{"component": "Slew drive seal", "used_pct": 92, "due_by": day(5), "part": "SEAL-KIT-SD"}],
-            "T-23": [{"component": "Slew drive seal", "used_pct": 88, "due_by": day(12), "part": "SEAL-KIT-SD"}],
-            "T-07": [{"component": "Slew drive seal", "used_pct": 71, "due_by": day(28), "part": "SEAL-KIT-SD"},
-                     {"component": "Drive grease", "used_pct": 64, "due_by": day(40), "part": "GREASE-KIT-SD"}],
-            "T-12": [{"component": "Drive grease", "used_pct": 90, "due_by": day(9), "part": "GREASE-KIT-SD"}],
-            "T-42": [{"component": "Drive grease", "used_pct": 84, "due_by": day(20), "part": "GREASE-KIT-SD"}],
-            "T-19": [{"component": "Drive motor", "used_pct": 55, "due_by": day(120), "part": "DRIVE-MOTOR-SD"}],
+            "WB-31": [{"component": "Spindle sensor module", "used_pct": 92, "due_by": day(5), "part": "PN-3307"}],
+            "WB-23": [{"component": "Spindle sensor module", "used_pct": 88, "due_by": day(12), "part": "PN-3307"}],
+            "DS-07": [{"component": "Spindle sensor module", "used_pct": 71, "due_by": day(28), "part": "PN-3307"},
+                      {"component": "Power supply board", "used_pct": 64, "due_by": day(40), "part": "PN-2210"}],
+            "TH-12": [{"component": "Power supply board", "used_pct": 90, "due_by": day(9), "part": "PN-2210"}],
+            "PR-42": [{"component": "Power supply board", "used_pct": 84, "due_by": day(20), "part": "PN-2210"}],
+            "DS-19": [{"component": "Cooling fan module", "used_pct": 55, "due_by": day(120), "part": "PN-1043"}],
         }
         self.inventory = {
-            "CENTRAL": {"SEAL-KIT-SD": {"on_hand": 6, "inbound": []}, "GREASE-KIT-SD": {"on_hand": 12, "inbound": []},
-                        "DRIVE-MOTOR-SD": {"on_hand": 1, "inbound": []}},
-            "NORTH": {"SEAL-KIT-SD": {"on_hand": 2, "inbound": []}, "GREASE-KIT-SD": {"on_hand": 4, "inbound": []},
-                      "DRIVE-MOTOR-SD": {"on_hand": 1, "inbound": []}},
-            "EAST": {"SEAL-KIT-SD": {"on_hand": 4, "inbound": []}, "GREASE-KIT-SD": {"on_hand": 3, "inbound": []},
-                     "DRIVE-MOTOR-SD": {"on_hand": 0, "inbound": []}},
-            "SOUTH": {"SEAL-KIT-SD": {"on_hand": 2, "inbound": []}, "GREASE-KIT-SD": {"on_hand": 3, "inbound": []},
-                      "DRIVE-MOTOR-SD": {"on_hand": 0, "inbound": []}},
+            "CENTRAL": {"PN-3307": {"on_hand": 6, "inbound": []}, "PN-2210": {"on_hand": 12, "inbound": []},
+                        "PN-1043": {"on_hand": 1, "inbound": []}},
+            "NORTH": {"PN-3307": {"on_hand": 2, "inbound": []}, "PN-2210": {"on_hand": 4, "inbound": []},
+                      "PN-1043": {"on_hand": 1, "inbound": []}},
+            "EAST": {"PN-3307": {"on_hand": 4, "inbound": []}, "PN-2210": {"on_hand": 3, "inbound": []},
+                     "PN-1043": {"on_hand": 0, "inbound": []}},
+            "SOUTH": {"PN-3307": {"on_hand": 2, "inbound": []}, "PN-2210": {"on_hand": 3, "inbound": []},
+                      "PN-1043": {"on_hand": 0, "inbound": []}},
         }
         self.cures: list[dict] = []
         self.pos: list[dict] = []
 
     # ---------------------------------------------------------------- demo events
-    def tower7_drifts(self) -> None:
-        self.telemetry["T-07"].update(msgs_per_hour=42.0, warnings_per_day=4.0, performance_ratio=0.95,
-                                      effort_per_deg=1.08)
-        self.events.append("prevention:T-07")
+    DRIFT_UDI = 162  # a real AI4I overstrain failure: torque 52.3 Nm with 218 min of tool wear
 
-    def tower19_stalls(self) -> dict:
-        code = ERROR_CODES["E-STALL"]
-        c = {"id": f"INC-{301 + len(self.cures)}", "product": "T-19", "code": "E-STALL", "opened": dt.datetime.now(),
+    def product_drifts(self, pid: str = "DS-07") -> None:
+        """The demo's prevention event: the saw's next reading is a failing AI4I record of the same type."""
+        self.readings[pid] = _failure_model().record(self.DRIFT_UDI)
+        self.events.append(f"prevention:{pid}")
+
+    def product_down(self, pid: str = "DS-19") -> dict:
+        code = ERROR_CODES["E-OVHT"]
+        c = {"id": f"INC-{301 + len(self.cures)}", "product": pid, "code": "E-OVHT", "opened": dt.datetime.now(),
              **code}
         self.cures.append(c)
-        self.events.append("cure:T-19")
+        self.events.append(f"cure:{pid}")
         return c
 
     def fab_l3_degrades(self) -> None:
@@ -280,7 +302,7 @@ class Plant:
         return {k: fab_status(k, r) for k, r in self.fab_readings.items()}
 
     def prevention(self) -> dict:
-        return {k: peer_deviation({"id": k, **self.telemetry[k]}, self.peers) for k in self.products}
+        return {k: failure_risk(k, self.readings[k]) for k in self.products}
 
     def maintenance_jobs(self) -> list[dict]:
         out = []
@@ -300,7 +322,7 @@ class Plant:
         for pid, p in self.prevention().items():
             if self.products[pid]["hub"] == hub and p["action"] == "watch":
                 for c in self.lifeline_table.get(pid, [])[:1]:
-                    out.append({"product": pid, "parts": [[c["part"], 1]], "p_need": 0.7})
+                    out.append({"product": pid, "parts": [[c["part"], 1]], "p_need": p["risk"]})
         return out
 
     def queue(self) -> dict:
@@ -317,8 +339,8 @@ class Plant:
             if p["action"] == "act":
                 promoted = day(6)  # next Thursday route (placeholder routing)
                 jobs.append({**m, "type": "prevention", "due_by": promoted, "was_due": m["due_by"],
-                             "rank_key": (1, -p["D"]), "reason": f"D = {p['D']} vs {p['peer_count']} peers "
-                             f"({p['worst_signal']}); pulled forward from {m['due_by']:%b %d}"})
+                             "rank_key": (1, -p["risk"]), "reason": f"failure risk {p['risk']:.0%} (Matthew's model; "
+                             f"{p['worst_signal']} off peers); pulled forward from {m['due_by']:%b %d}"})
             else:
                 jobs.append({**m, "rank_key": (2, (m["due_by"] - TODAY).days)})
         for pid, p in prev.items():  # a strong signal on a product with no due job still creates one
@@ -328,8 +350,8 @@ class Plant:
                     c = comps[0]
                     jobs.append({"type": "prevention", "product": pid, "component": c["component"],
                                  "parts": [[c["part"], 1]], "due_by": day(6), "was_due": c["due_by"],
-                                 "rank_key": (1, -p["D"]), "reason": f"D = {p['D']} vs {p['peer_count']} peers "
-                                 f"({p['worst_signal']}); pulled forward from {c['due_by']:%b %d}"})
+                                 "rank_key": (1, -p["risk"]), "reason": f"failure risk {p['risk']:.0%} (Matthew's model; "
+                                 f"{p['worst_signal']} off peers); pulled forward from {c['due_by']:%b %d}"})
         jobs.sort(key=lambda j: j["rank_key"])
         stock = {h: {k: v["on_hand"] for k, v in inv.items()} for h, inv in self.inventory.items()}
         allocation: dict = {}

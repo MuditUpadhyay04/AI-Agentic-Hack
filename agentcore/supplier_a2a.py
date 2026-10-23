@@ -37,7 +37,7 @@ def make_agent(supplier: str, model=None) -> Agent:
         return {"supplier": supplier, "pn": pn, "error": "not in catalogue"}
 
     kw = {"model": model} if model else {}
-    return Agent(name=supplier.replace(" ", "_"), description=f"{supplier}: quotes slew-drive parts by A2A.",
+    return Agent(name=supplier.replace(" ", "_"), description=f"{supplier}: quotes equipment spare parts by A2A.",
                  system_prompt=f"You are the sales agent of {supplier}. Answer RFQs only with your quote tool. "
                                "Never promise a lead time the tool did not return.", tools=[quote], **kw)
 

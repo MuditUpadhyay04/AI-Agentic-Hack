@@ -4,9 +4,8 @@ Replace the starter kit's ``agent.py`` with this file (or point the kit's deploy
 hosts the crew; the payload says which loop to run:
 
     {"action": "plan_mill"}                      Run loop, mill VM-07, stops at the approval card
-    {"action": "plan_tower", "tower_id": 7}      Run loop, solar tower, stops at the approval card
     {"action": "approve", "plan": {...}}         Execute after the foreman approves
-    {"action": "improve"}                        Kaizen
+    {"action": "predict", "udi": 162}            Prevention: Matthew's failure model on one AI4I reading
     {"action": "grow", "manual": "lathe_l2_manual.md"}
     {"action": "sourcing"}                       Sourcing agent: urgent parts on site, restock hubs, buy
 
@@ -44,12 +43,10 @@ def invoke(payload: dict, context=None):
     action = payload.get("action", "plan_mill")
     if action == "plan_mill":
         out = crew.plan_mill()
-    elif action == "plan_tower":
-        out = crew.plan_tower(int(payload.get("tower_id", 7)))
     elif action == "approve":
         out = crew.execute(payload["plan"], payload.get("who", "Foreman"))
-    elif action == "improve":
-        out = crew.improve()
+    elif action == "predict":
+        out = w.predict_failure(int(payload.get("udi", 162)))
     elif action == "sourcing":
         out = crew.sourcing()
     elif action == "grow":
