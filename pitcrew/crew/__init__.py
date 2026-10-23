@@ -83,6 +83,12 @@ class Crew:
         base["turns"] = extra.get("turns", []) + base["turns"]
         return base
 
+    # ---- Supply
+    def sourcing(self) -> dict:
+        from . import strands_crew as S
+
+        return self._try(lambda: S.sourcing(self.w, self._model()), lambda: offline.sourcing(self.w))
+
     def grow(self, manual: str) -> dict:
         return offline.grow(self.w, manual)
 

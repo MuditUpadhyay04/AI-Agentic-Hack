@@ -15,7 +15,7 @@ pointed at a fleet of solar towers.
 
 ```bash
 pip install -r requirements.txt          # Python 3.10+
-python -m pytest -q                      # 24 tests, ~50 s
+python -m pytest -q                      # 32 tests, ~50 s
 python scripts/run_demo.py               # the whole story in the terminal
 shiny run app/app.py --port 8000         # the operator console -> http://localhost:8000
 ```

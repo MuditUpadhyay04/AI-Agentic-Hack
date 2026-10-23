@@ -23,7 +23,7 @@ Hub network: one central hub (next to the factory, most inventory) and local hub
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                         # 24 tests
+python -m pytest -q                         # 32 tests
 python scripts/run_demo.py                  # terminal demo
 shiny run app/app.py --port 8000            # console
 python scripts/console_smoke.py --port 8000 # click-through over Shiny's websocket (needs the console running)
@@ -41,9 +41,16 @@ Bedrock instead of the offline crew: `PITCREW_LLM=bedrock`, `PITCREW_MODEL_ID=<m
   `World.trace`. Add a capability = add a method here + a `@tool` wrapper in `crew/strands_crew.py`.
 - `pitcrew/crew/` — `offline.py` (deterministic narration; the reference), `strands_crew.py` (Bedrock,
   GraphBuilder), `scripted_model.py` (fake Strands model for tests), `__init__.py` (`Crew` facade, fallback).
-- `pitcrew/ops.py` — parts, quotes, technicians, work orders, POs, `POLICY` (POs over $500 need a human),
-  `best_quote` (cheapest quote that arrives in time). **Starting point for Sourcing**: it has one parts room
-  today; v0.2 needs hubs, demand from the job queue, a buffer, an order-by date, and cheapest + fastest.
+- `pitcrew/sourcing.py` — **Sourcing (v0.2).** `Job` + `rank` (the shared queue shape: cure > prevention >
+  maintenance, then due date); `Network` (central hub, local hubs, sites, stock per hub and part, vendor
+  quotes). `fulfil(job)` walks local hub → central hub → another local hub → buy (fastest verified);
+  `restock_local_hubs`; `central_plan` (qty, need-by, cheapest-in-time vs fastest, order-by, policy);
+  `place_order` (verified vendors only); `advance` (receive shipments). `demo_network()`/`demo_jobs()`
+  carry the same placeholder numbers as `docs/SIMULATION_PROMPT.md`; `tests/test_sourcing.py` pins them.
+  The Sourcing agent: `Crew.sourcing()` (offline narration in `crew/offline.py`, Bedrock prompt + tools in
+  `crew/strands_crew.py`).
+- `pitcrew/ops.py` — v0.1 single parts room, quotes, technicians, work orders, POs, `POLICY` (POs over $500
+  need a human; `sourcing.py` uses the same policy).
 - `pitcrew/mill.py` — AI4I walls, Lift & Coast, Monte Carlo, mill economics. **Starting point for Internal fab.**
 - `pitcrew/tower.py` — `DriveModel` (all coefficients), `Fleet` simulation (48 ST-1 towers, 3 sites, lots
   A/B/C, demo towers 7/19/31/42 scripted), detectors, `rul_days`, `project`. Source of simulated telemetry
@@ -69,9 +76,11 @@ Bedrock instead of the offline crew: `PITCREW_LLM=bedrock`, `PITCREW_MODEL_ID=<m
 
 ## Next steps, in value order
 
-1. Sourcing: hub-aware inventory in `ops.py`, demand from a job queue, emergency buffer, order-by date,
-   cheapest vs fastest vendor; tools in `world.py`; a Bedrock-backed Sourcing agent in `crew/`.
-2. Agree the shared shapes with the team: `job` (idea.md §6) and `fab_forecast(part)` (idea.md §7b).
+1. Plug the real pipelines into `Network.jobs`: lifeline tasks (maintenance pipeline) and predicted failures
+   (Matthew's model: part number + site + predicted date) as `sourcing.Job`s; Hari's machine-downtime model
+   (`machine_downtime_model/predict.py`) as in-house lead time (`fab_forecast(part)`, idea.md §7b).
+2. Run the Sourcing agent on Bedrock in the workshop account (`PITCREW_LLM=bedrock`); add a Sourcing view to
+   the console or export the moves/POs as the simulation's scenario data.
 3. Prevention: peer-deviation score on `tower.py` telemetry; Cure: error-code table + SendGrid.
 4. Fetch the real AI4I file in the workshop and rerun the tests (the replica's counts differ slightly).
 5. AgentCore Gateway + Policy for `World` tools; Bedrock Knowledge Base for `data/manuals/`.

@@ -26,6 +26,8 @@ CALLS = {
     "Dispatcher": lambda task: [("next_route_day", {})],
     "Kaizen": lambda task: [("kaizen_lots", {}), ("tracking_tradeoff", {})],
     "Onboarder": lambda task: [("onboard_manual", {"manual": "lathe_l2_manual.md"})],
+    "Sourcing": lambda task: [("job_queue", {}), ("fulfil_job", {"job_id": "CUR-007"}),
+                              ("restock_local_hubs", {"pn": "PN-2210"}), ("plan_central_order", {"pn": "PN-2210"})],
 }
 
 

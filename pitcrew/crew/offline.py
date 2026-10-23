@@ -9,7 +9,7 @@ from ..mill import WALL_NAMES
 from ..world import World
 
 STAGES = {"Sentinel": "Monitor", "Diagnostician": "Analyze", "Race Engineer": "Plan", "Quartermaster": "Execute",
-          "Dispatcher": "Execute", "Kaizen": "Improve", "Onboarder": "Grow", "Foreman": "Human"}
+          "Dispatcher": "Execute", "Kaizen": "Improve", "Onboarder": "Grow", "Foreman": "Human", "Sourcing": "Supply"}
 
 
 class Transcript:
@@ -242,3 +242,57 @@ def grow_sign(w: World, asset_id: str, who: str = "Foreman") -> dict:
     r = w.sign_passport(asset_id, who)
     tr.speak("Onboarder", f"{asset_id} signed by {who}. Started {', '.join(r['agents_started'])}.", i)
     return {"turns": tr.turns, "result": r}
+
+
+# ---------------------------------------------------------------------------- sourcing
+_ROUTE = {"local": "from {local}", "central": "{local} had none, so the central hub sent stock first",
+          "lateral": "{local} and the central hub had none, so another local hub sent it"}
+
+
+def sourcing(w: World) -> dict:
+    """Urgent jobs first (cure, then prevention), then refill the local hubs, then refill the central hub."""
+    tr = Transcript(w)
+    i = tr.as_agent("Sourcing")
+    q = w.job_queue()
+    urgent = [j for j in q["jobs"] if j["kind"] in ("cure", "prevention") and j["status"] == "open"]
+    lines, parts = [], []
+    for j in urgent:
+        r = w.fulfil_job(j["job_id"])
+        if j["pn"] not in parts:
+            parts.append(j["pn"])
+        if r["route"] == "buy":
+            lines.append(f"{j['job_id']} ({j['pn']} to {j['site']}): no hub had it; {r['po']['po']} to "
+                         f"{r['po']['vendor']}, arrives {r['po']['arrives']}.")
+            continue
+        local = w.network.sites[j["site"]]
+        lines.append(f"{j['job_id']} ({j['kind']}, {j['pn']} to site {j['site']}): "
+                     f"{_ROUTE[r['route']].format(local=local)}; {local} now holds {r['local_after']}.")
+    tr.speak("Sourcing", " ".join(lines) or "No urgent jobs need parts.", i)
+
+    i = tr.as_agent("Sourcing")
+    lines, plans, pos = [], [], []
+    for pn in parts:
+        rs = w.restock_local_hubs(pn)
+        for m in rs["moves"]:
+            lines.append(f"Central hub sent {m['qty']} x {pn} to {m['to']} ({m['why']}).")
+        p = w.plan_central_order(pn)
+        if not p["needed"]:
+            lines.append(f"Central hub has {p['position']} x {pn}, above its reorder level of "
+                         f"{p['reorder_level']}: nothing to buy.")
+            continue
+        plans.append(p)
+        pick, fast = p["pick"], p["fastest"]
+        late = [o for o in p["options"] if not o["in_time"] and o["total_usd"] < pick["total_usd"]]
+        lines.append(
+            f"Central hub is down to {p['position']} x {pn} (reorder level {p['reorder_level']}): buy {p['qty']} "
+            f"by {p['need_by']} ({p['need_by_why']}). Cheapest in time: {pick['vendor']}, "
+            f"{_money(pick['total_usd'])}, arrives {pick['arrives']} (order by {pick['order_by']}). "
+            + (f"Fastest: {fast['vendor']}, {_money(fast['total_usd'])}, arrives {fast['arrives']}. "
+               if fast is not pick else "")
+            + (f"{late[0]['vendor']} is cheaper but arrives {late[0]['arrives']}, too late. " if late else "")
+            + (f"Excluded (not verified): {', '.join(x['vendor'] for x in p['excluded'])}. " if p["excluded"] else ""))
+        po = w.place_order(pn, pick["vendor"], pick["qty"])
+        pos.append(po)
+        lines.append(f"{po['po']} {po['status']}.")
+    tr.speak("Sourcing", " ".join(s.strip() for s in lines), i)
+    return {"turns": tr.turns, "plans": plans, "pos": pos, "moves": list(w.network.moves)}
