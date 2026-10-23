@@ -5,13 +5,16 @@ is genuinely agentic on AWS. The code is ready; you only need model access, cred
 
 ## 1. Turn on a model (2 min, AWS console)
 
+The Model access page is retired: models switch on automatically the first time they're invoked.
+
 1. AWS console → **Amazon Bedrock** → region the workshop uses (top right; usually `us-east-1` or
    `us-west-2`).
-2. Left menu → **Model access** → make sure an **Anthropic Claude** model shows *Access granted*. If not,
-   *Modify model access* → tick it → submit (usually instant in workshop accounts).
-3. Note the **inference profile ID** (left menu → *Cross-region inference*), e.g.
+2. Left menu → **Model catalog** → pick an **Anthropic Claude** model (Sonnet) → **Open in playground** →
+   send "hi". That first call enables it for the account. If a **use case details** form appears (first use
+   of Anthropic models), fill it in and submit, then send "hi" again until you get a reply.
+3. Copy the **inference profile ID** (the model's page, or left menu → *Cross-region inference*), e.g.
    `us.anthropic.claude-sonnet-4-5-20250929-v1:0` (the code's default). If the workshop kit has `infer.py`,
-   run it: whatever model ID it uses successfully is the one to use.
+   run it: whatever model ID it uses successfully is the one to use. Send this ID to your teammate.
 
 ## 2. Credentials in your terminal (2 min)
 
@@ -41,7 +44,7 @@ If it says `offline (fallback)`, the first turn shows the error:
 
 | Error | Fix |
 |---|---|
-| `AccessDeniedException` / not authorized to invoke | Model access not granted (step 1) or wrong region |
+| `AccessDeniedException` / not authorized to invoke | Invoke the model once in the playground (step 1), submit the use-case form if asked, check region |
 | `ValidationException` ... model identifier is invalid | Use the inference profile ID (`us.` prefix) from step 1 |
 | `UnrecognizedClientException` / expired token | Re-copy credentials (step 2) |
 | `NoRegionError` | Set `$env:AWS_REGION` |
