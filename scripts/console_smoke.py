@@ -15,10 +15,10 @@ import sys
 
 import websockets
 
-PLOTS = ["mill_signals", "mill_envelope", "fleet_map", "tower_chart", "tower_options_plot", "tower_energy_plot",
+PLOTS = ["prev_chart", "mill_signals", "mill_envelope", "fleet_map", "tower_chart", "tower_options_plot", "tower_energy_plot",
          "kaizen_lots", "kaizen_futures"]
 UIS = ["mill_status", "mill_transcript", "mill_approval", "mill_incident", "mill_stats", "mill_wo", "mill_health",
-       "plant_chip", "crew_list", "alert_badge", "alert_stats", "incident_badge", "incident_stats", "incident_table", "incident_detail", "alert_list", "alert_detail", "tower_transcript", "tower_option_cards", "tower_approval",
+       "plant_chip", "crew_list", "alert_badge", "alert_stats", "queue_badge", "cure_badge", "queue_chip", "queue_stats", "queue_table", "queue_detail", "queue_log", "prev_head", "prev_lifelines", "prev_fleet", "cure_list", "hub_table", "order_card_ui", "fab_cards", "alert_list", "alert_detail", "tower_transcript", "tower_option_cards", "tower_approval",
        "kaizen_tiles", "kaizen_rules", "kaizen_transcript", "kaizen_dcr", "grow_passport", "grow_transcript",
        "slot_buttons"]
 
@@ -31,8 +31,12 @@ STEPS = [
     ("mill_pick_lc", {"mill_pick": "lift_and_coast"}, ["mill_approval"]),
     ("mill_approve", {"mill_approve": 1}, ["mill_transcript", "mill_wo", "mill_incident", "mill_stats"]),
     ("mill_revert", {"mill_revert": 1}, ["mill_transcript", "mill_approval"]),
-    ("mill_approve_2", {"mill_approve": 2}, ["incident_table", "incident_detail", "incident_stats"]),
-    ("incident_sel", {"incident_sel": "INC-209"}, ["incident_detail"]),
+    ("ev_prev", {"ev_prev": 1}, ["queue_table", "queue_log", "prev_head", "prev_chart", "hub_table"]),
+    ("ev_cure", {"ev_cure": 1}, ["queue_table", "cure_list", "alert_list", "order_card_ui"]),
+    ("ev_fab", {"ev_fab": 1}, ["fab_cards", "queue_log"]),
+    ("src_motor", {"src_part": "DRIVE-MOTOR-SD"}, ["order_card_ui"]),
+    ("po_cheapest", {"po_cheapest": 1}, ["order_card_ui", "hub_table", "queue_log"]),
+    ("queue_sel", {"queue_sel": "JOB-1042"}, ["queue_detail"]),
     ("tower_assess", {"tower_assess": 1}, ["tower_transcript", "tower_approval"]),
     ("tower_approve", {"tower_approve": 1}, ["tower_transcript", "tower_approval"]),
     ("kaizen_run", {"kaizen_run": 1}, ["kaizen_transcript", "kaizen_dcr", "kaizen_rules"]),
@@ -48,7 +52,7 @@ async def run(port: int) -> int:
             ".clientdata_url_port": str(port), ".clientdata_url_pathname": "/", ".clientdata_url_search": "",
             ".clientdata_url_hash_initial": "", ".clientdata_url_hash": "", ".clientdata_pixelratio": 1,
             ".clientdata_singletons": "", ".clientdata_allowDataUriScheme": True,
-            "tower_id": "7", "manual": "lathe_l2_manual.md"}
+            "tower_id": "7", "manual": "lathe_l2_manual.md", "prev_product": "T-07", "src_part": "SEAL-KIT-SD", "src_hub": "NORTH"}
     for p in PLOTS:
         init[f".clientdata_output_{p}_width"] = 760
         init[f".clientdata_output_{p}_height"] = 300

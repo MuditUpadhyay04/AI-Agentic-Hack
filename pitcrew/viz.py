@@ -232,3 +232,27 @@ def futures_chart(slots: list[dict], crew_value: float) -> plt.Figure:
     ax.set_title("Sensor Futures: what to put on the next tower")
     fig.subplots_adjust(left=0.42)
     return fig
+
+
+# ------------------------------------------------------------------ v0.2: product vs peers
+def peer_compare(signals: list[dict]) -> plt.Figure:
+    """One row per signal: the peers' range (bar), their median (tick) and this product (dot), on a shared
+    'z vs peers' scale so different units sit on one chart."""
+    fig, ax = _fig(7.2, 0.62 * len(signals) + 0.9)
+    fig.subplots_adjust(left=0.30, right=0.95, top=0.92, bottom=0.22)
+    for i, s in enumerate(signals):
+        y = len(signals) - 1 - i
+        ax.barh(y, 4, left=-2, height=0.36, color=GRID, zorder=1)
+        ax.plot([0, 0], [y - 0.24, y + 0.24], color=QUIET, lw=1.4, zorder=2)
+        z = max(min(s["z"], 7.5), -2.5)
+        color = WALL if s["z"] > 3 else WARN if s["z"] >= 2 else SAFE
+        ax.scatter([z], [y], s=70, color=color, zorder=3, edgecolor="white")
+        ax.text(z + 0.25, y + 0.18, f"{s['value']:g} (peers {s['peer_median']:g})", fontsize=8.5, color=INK)
+    ax.axvline(2, color=WARN, lw=1, ls=":")
+    ax.axvline(3, color=WALL, lw=1, ls="--")
+    ax.set_yticks(range(len(signals)))
+    ax.set_yticklabels([s["label"] for s in reversed(signals)])
+    ax.set_xlim(-2.5, 8)
+    ax.set_xlabel("deviation vs peers (robust z, worse to the right) · grey = peers' typical range")
+    ax.grid(axis="y", visible=False)
+    return fig

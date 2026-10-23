@@ -24,7 +24,9 @@ from shiny import App, reactive, render, ui  # noqa: E402
 from pitcrew import __version__, mill, viz  # noqa: E402
 from pitcrew.crew import Crew  # noqa: E402
 from pitcrew.decide import diagnose, energy_table  # noqa: E402
-from pitcrew.ops import ALERT_POLICY  # noqa: E402
+from pitcrew.contracts import (BUFFER, FAB_MACHINES, HUBS, PLACEHOLDER, VENDORS, Plant, fab_forecast,  # noqa: E402
+                               lifelines, order_card)
+from pitcrew.ops import ALERT_POLICY, TODAY  # noqa: E402
 from pitcrew.passport import manuals  # noqa: E402
 from pitcrew.tower import Fleet  # noqa: E402
 from pitcrew.world import World  # noqa: E402
@@ -44,6 +46,7 @@ FONTS = ("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&fa
 AGENTS = {"Sentinel": ("SEN", "#9A9DAA"), "Diagnostician": ("DIA", "#FFB800"), "Race Engineer": ("RAC", "#4D7CFE"),
           "Comms": ("COM", "#8E5CF6"), "Quartermaster": ("QMS", "#00A651"), "Dispatcher": ("DSP", "#00A651"),
           "Foreman": ("FMN", "#15151E"), "Kaizen": ("KZN", "#00A651"), "Onboarder": ("ONB", "#00A651"),
+          "Scheduler": ("SCH", "#4D7CFE"), "Fab Engineer": ("FAB", "#6B6E7B"), "Manager": ("MGR", "#15151E"),
           "System": ("SYS", "#9A9DAA")}
 VERBS = {"Sentinel": "checked the limits", "Diagnostician": "added a finding", "Race Engineer": "proposed an action",
          "Comms": "alerted the floor", "Quartermaster": "handled parts", "Dispatcher": "booked the work",
@@ -105,10 +108,20 @@ INCIDENT_HISTORY = [
          ("08:02", "Foreman", "Approve", "Approved filter change at break"),
          ("09:12", "Dispatcher", "Execute", "WO-4087 closed; failure mode recorded: clogging")]},
 ]
-NAV = [("mill", "Assets · VM-07", "assets"), ("towers", "Janta towers", "towers"),
-       ("incidents", "Incidents", "incidents"), ("alerts", "Alerts", "alerts"),
+ICON["queue"] = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+                 'aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>')
+ICON["parts"] = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+                 'aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>')
+ICON["fab"] = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+               'aria-hidden="true"><path d="M3 21V10l6 4V10l6 4V6h6v15z"/></svg>')
+# None starts a new sidebar section with that label.
+NAV = [("queue", "Priority queue", "queue"), ("prevention", "Prevention", "improve"), ("cure", "Cure", "incidents"),
+       ("sourcing", "Parts & sourcing", "parts"), ("fab", "Internal fab", "fab"), ("alerts", "Alerts · SendGrid", "alerts"),
+       (None, "V0.1 · STRETCH", None),
+       ("mill", "VM-07 Lift & Coast", "assets"), ("towers", "Janta towers", "towers"),
        ("improve", "Improve", "improve"), ("grow", "Onboard asset", "grow"), ("why", "Why (press release)", "why"),
        ("arch", "Architecture", "arch")]
+TYPE_STYLE = {"cure": ("CURE", "flag red"), "prevention": ("PREV", "flag amber"), "maintenance": ("MAINT", "flag ink")}
 
 
 def new_world() -> World:
@@ -205,12 +218,15 @@ def pagehead(kicker: str, title: str, sub: str):
 # ------------------------------------------------------------------ layout
 def sidebar():
     links = []
+    badges = {"alerts": "alert_badge", "cure": "cure_badge", "queue": "queue_badge"}
     for key, label, icon in NAV:
-        badge = (ui.output_ui("alert_badge", inline=True) if key == "alerts"
-                 else ui.output_ui("incident_badge", inline=True) if key == "incidents" else None)
+        if key is None:
+            links.append(ui.div(label, class_="sec"))
+            continue
+        badge = ui.output_ui(badges[key], inline=True) if key in badges else None
         links.append(ui.input_action_button(f"nav_{key}", ui.TagList(ui.span(class_="tick"), ui.HTML(ICON[icon]),
                                                                        ui.span(label), badge),
-                                            class_="navlink" + (" active" if key == "mill" else "")))
+                                            class_="navlink" + (" active" if key == "queue" else "")))
     return ui.tags.aside(
         ui.div(ui.HTML(CHECKER), ui.div(ui.div("PITCREW", class_="word"), ui.div("Austin Plant", class_="plant")),
                class_="logo"),
@@ -220,6 +236,95 @@ def sidebar():
         ui.div(ui.span("FM", class_="av"), ui.div(ui.div("Foreman", style="font-weight:600;font-size:13px"),
                                                   ui.div("Line 2 · Shift B", class_="plant")), class_="me"),
         class_="side")
+
+
+# ------------------------------------------------------------------ v0.2 pages
+def source_note(text: str):
+    return ui.span(text, class_="srcnote")
+
+
+def queue_page():
+    return ui.nav_panel(
+        "queue",
+        topbar("<b>Priority queue</b>", ui.output_ui("queue_chip", inline=True)),
+        ui.div(
+            pagehead("PREVENTION · CURE · MAINTENANCE", "Priority queue",
+                     "One list of jobs from all three loops. Cure first, then Prevention by deviation, then "
+                     "Maintenance by due date. Stock is allocated in this order, so a part is never promised twice."),
+            ui.output_ui("queue_stats"),
+            ui.div(ui.div(box("Jobs", ui.output_ui("queue_table"), right="click a job for details"),
+                          ui.output_ui("queue_detail"), class_="col-main"),
+                   ui.div(box("Activity", ui.output_ui("queue_log")), class_="col-side"), class_="row2"),
+            class_="page"))
+
+
+def prevention_page():
+    return ui.nav_panel(
+        "prevention",
+        topbar("Fleet / <b>Prevention</b>"),
+        ui.div(
+            pagehead("PRODUCT A VS ITS PEERS · MATTHEW", "Prevention",
+                     "A product that behaves differently from its peers is wearing faster than its lifeline assumes. "
+                     "The more different it is (D), the sooner it is visited."),
+            ui.div(ui.input_select("prev_product", None, choices={k: v["name"] for k, v in Plant().products.items()},
+                                   selected="T-07"), ui.output_ui("prev_head", inline=True),
+                   class_="pickrow"),
+            ui.div(ui.div(box("Signals vs peers", ui.output_plot("prev_chart", height="290px"),
+                              note="same model, same site, similar age"),
+                          class_="col-main"),
+                   ui.div(box("Lifelines", ui.output_ui("prev_lifelines"), note="maintenance pipeline", pad=True),
+                          class_="col-side"), class_="row2"),
+            box("Fleet", ui.output_ui("prev_fleet"), right="D < 2 normal · 2–3 watch · > 3 act"),
+            class_="page"))
+
+
+def cure_page():
+    return ui.nav_panel(
+        "cure",
+        topbar("Fleet / <b>Cure</b>"),
+        ui.div(
+            pagehead("PRODUCT IS DOWN · MUDIT", "Cure",
+                     "An error code that means down goes to the top of the queue: the part is pulled from the nearest "
+                     "hub and the site lead and technician are emailed through SendGrid."),
+            ui.output_ui("cure_list"),
+            class_="page"))
+
+
+def sourcing_page():
+    return ui.nav_panel(
+        "sourcing",
+        topbar("Supply chain / <b>Parts & sourcing</b>"),
+        ui.div(
+            pagehead("CENTRAL HUB · LOCAL HUBS · AUTHORIZED VENDORS · MUDIT", "Parts & sourcing",
+                     f"For every part at every hub: enough for the jobs coming up plus {BUFFER} spare for emergencies? "
+                     "If not, when to order and from whom: the cheapest vendor that arrives in time vs the fastest."),
+            box("Stock vs upcoming demand", ui.output_ui("hub_table"), right="30-day horizon"),
+            ui.div(ui.input_select("src_part", None, choices={p: p for p in VENDORS}, selected="SEAL-KIT-SD"),
+                   ui.input_select("src_hub", None, choices={k: v["name"] for k, v in HUBS.items()}, selected="NORTH"),
+                   class_="pickrow"),
+            ui.output_ui("order_card_ui"),
+            class_="page"))
+
+
+def fab_page():
+    return ui.nav_panel(
+        "fab",
+        topbar("Supply chain / <b>Internal fab</b>"),
+        ui.div(
+            pagehead("FACTORY MACHINES · HARI", "Internal fab",
+                     "Machine health from the downtime model, and what it does to the parts we make in-house. When a "
+                     "machine degrades, in-house lead time grows and Sourcing switches to an outside vendor."),
+            ui.output_ui("fab_cards"),
+            class_="page"))
+
+
+def demo_bar():
+    return ui.div(ui.tags.b("Demo"),
+                  ui.input_action_button("ev_prev", "1 · Tower 7 drifts from peers"),
+                  ui.input_action_button("ev_cure", "2 · Tower 19 throws E-STALL"),
+                  ui.input_action_button("ev_fab", "3 · Makino L3 hydraulic drop"),
+                  ui.input_action_button("ev_reset", "Reset"),
+                  class_="democtl demofloat")
 
 
 def mill_page():
@@ -409,6 +514,9 @@ $(document).on('change', 'input[name=mill_pick]', function () {
 $(document).on('click', '.alist button', function () {
   Shiny.setInputValue('alert_sel', $(this).data('id'), {priority: 'event'});
 });
+$(document).on('click', 'tr.q-row', function () {
+  Shiny.setInputValue('queue_sel', $(this).data('id'), {priority: 'event'});
+});
 $(document).on('click', 'tr.inc-row', function () {
   Shiny.setInputValue('incident_sel', $(this).data('id'), {priority: 'event'});
 });
@@ -422,10 +530,11 @@ app_ui = ui.page_fluid(
                     ui.include_css(ROOT / "app" / "www" / "styles.css"), ui.tags.script(NAV_JS)),
     ui.div(sidebar(),
            ui.tags.main(ui.div(class_="redline"),
-                        ui.navset_hidden(mill_page(), towers_page(), incidents_page(), alerts_page(), improve_page(), grow_page(),
+                        ui.navset_hidden(queue_page(), prevention_page(), cure_page(), sourcing_page(), fab_page(),
+                                         alerts_page(), mill_page(), towers_page(), improve_page(), grow_page(),
                                          story_page(), arch_page(), id="page"),
                         class_="mainpane"),
-           class_="shell"),
+           demo_bar(), class_="shell"),
 )
 
 
@@ -451,12 +560,422 @@ def server(input, output, session):
 
     # ---------------- navigation
     for key, _, _ in NAV:
+        if key is None:
+            continue
+
         def _bind(k=key):
             @reactive.effect
             @reactive.event(input[f"nav_{k}"])
             def _():
                 ui.update_navset("page", selected=k)
         _bind()
+
+    # ================================================================ v0.2: queue, prevention, cure, sourcing, fab
+    plant = Plant()
+    plant_rev = reactive.value(0)
+    plant_log = reactive.value([])
+    queue_sel = reactive.value(None)
+
+    def bump():
+        plant_rev.set(plant_rev() + 1)
+        alerts_rev.set(alerts_rev() + 1)
+
+    def log(agent: str, verb: str, say: str, tool: str | None = None, args: dict | None = None, result=None):
+        """Add a crew turn; the numbers in it come from the contract call recorded as its tool."""
+        tools = []
+        if tool:
+            w.agent = agent
+            w._rec(tool, args or {}, result)
+            tools = w.trace[-1:]
+        plant_log.set(plant_log() + [{"agent": agent, "verb": verb, "say": say, "tools": tools,
+                                      "time": dt.datetime.now().strftime("%H:%M")}])
+
+    def pq() -> dict:
+        plant_rev()
+        return plant.queue()
+
+    def job_for(product: str) -> dict | None:
+        return next((j for j in plant.queue()["jobs"] if j["product"] == product), None)
+
+    def alert_now(agent_verb: str, ref: str, sev: str, to: list, subject: str, body: str, checks: list):
+        n0 = len(w.trace)
+        w.agent = "Comms"
+        a = w.send_alert(ref, sev, to, subject, body, checks)
+        plant_log.set(plant_log() + [{"agent": "Comms", "verb": agent_verb, "tools": w.trace[n0:],
+                                      "say": f"{sev} email via SendGrid to {', '.join(to)}: \"{subject}\". "
+                                             + (f"Escalates after {a['escalate_after_min']} min without an ack."
+                                                if a["escalate_after_min"] else "")}])
+
+    @reactive.effect
+    @reactive.event(input.ev_prev)
+    def _():
+        if "prevention:T-07" in plant.events:
+            return
+        plant.tower7_drifts()
+        p = plant.prevention()["T-07"]
+        log("Sentinel", "compared Tower 7 with its peers",
+            f"Tower 7: D = {p['D']} against {p['peer_count']} peers; worst signal {p['worst_signal']}. Action: {p['action']}.",
+            "peer_deviation", {"product": "T-07"}, p)
+        j = job_for("T-07")
+        parts = "; ".join(f"{s['part']} {s['text']}" for s in j["parts_status"])
+        log("Scheduler", "re-ranked the queue",
+            f"{j['job_id']} for Tower 7 pulled forward from {j['was_due']:%b %d} to {j['due_by']:%b %d}, now rank "
+            f"{j['rank']}. {parts}.", "queue", {}, {k: v for k, v in j.items() if k != "rank_key"})
+        alert_now("told the site", "Tower 7", "SEV-3", ["Site lead, DFW warehouse roof"],
+                  f"[SEV-3] Tower 7 visit moved to {j['due_by']:%b %d}: drifting from its peers",
+                  f"Tower 7 is behaving differently from its {p['peer_count']} peers ({p['worst_signal']}, D = {p['D']}). "
+                  f"Its {j['component'].lower()} job moved from {j['was_due']:%b %d} to {j['due_by']:%b %d}.",
+                  ["Expect the technician on the new date", "Note any alarms on the tower controller"])
+        bump()
+
+    @reactive.effect
+    @reactive.event(input.ev_cure)
+    def _():
+        if "cure:T-19" in plant.events:
+            return
+        c = plant.tower19_stalls()
+        log("Sentinel", f"opened {c['id']}",
+            f"Tower 19 threw {c['code']} ({c['meaning']}): the product is down, about ${c['downtime_usd_per_h']:.0f}/h "
+            "of lost energy.", "error_code", {"product": "T-19"}, {k: v for k, v in c.items() if k != "opened"})
+        log("Diagnostician", "mapped the code",
+            f"{c['code']} → {c['component']}; parts: " + ", ".join(f"{p} × {q}" for p, q in c["parts"]) + ".",
+            "error_code_table", {"code": c["code"]}, {"component": c["component"], "parts": c["parts"]})
+        j = job_for("T-19")
+        log("Quartermaster", "pulled the part",
+            "; ".join(f"{s['part']} {s['text']}" for s in j["parts_status"]) + ".", "queue", {},
+            {k: v for k, v in j.items() if k != "rank_key"})
+        alert_now("emailed the site and technician", "Tower 19", "SEV-1",
+                  ["Site lead, DFW warehouse roof", "Technician, DFW route"],
+                  f"[SEV-1] Tower 19 is down ({c['code']}). Drive motor reserved at {HUBS[j['hub']]['name']}",
+                  f"Tower 19 stopped with {c['code']} ({c['meaning']}). Likely failed component: {c['component']}. "
+                  f"Priority job {j['job_id']} is at the top of the queue for today.",
+                  [f"Pick up DRIVE-MOTOR-SD at {HUBS[j['hub']]['name']}", "Lock out the drive before opening the housing",
+                   "Record the failure mode when closing the job"])
+        log("Dispatcher", "booked the priority job",
+            f"{j['job_id']} is rank {j['rank']}: technician rerouted to Tower 19 today.")
+        bump()
+
+    @reactive.effect
+    @reactive.event(input.ev_fab)
+    def _():
+        if "fab:MK-L3" in plant.events:
+            return
+        plant.fab_l3_degrades()
+        st = plant.fab_statuses()
+        s3 = st["MK-L3"]
+        prob = f"{100 * s3['failure_probability']:.0f}%" if s3["failure_probability"] is not None else "n/a"
+        log("Fab Engineer", "read the downtime model",
+            f"Makino L3: {s3['status']} (failure probability {prob}, {s3['source']}).", "fab_status",
+            {"machine": "MK-L3"}, s3)
+        fc = fab_forecast("DRIVE-MOTOR-SD", st)
+        log("Quartermaster", "re-checked in-house supply",
+            f"In-house DRIVE-MOTOR-SD now takes {fc['lead_time_days']} days ({fc['reason']}). The order card "
+            "re-picks the cheapest option that still arrives in time.", "fab_forecast", {"part": "DRIVE-MOTOR-SD"}, fc)
+        bump()
+
+    @reactive.effect
+    @reactive.event(input.ev_reset)
+    def _():
+        nonlocal plant
+        plant = Plant()
+        plant_log.set([])
+        queue_sel.set(None)
+        reset_mill()
+        bump()
+
+    @reactive.effect
+    @reactive.event(input.queue_sel)
+    def _():
+        queue_sel.set(input.queue_sel())
+
+    def place(which: str):
+        q = pq()
+        card = order_card(input.src_part(), input.src_hub(), plant, q["allocation"])
+        opt = card[which]
+        if not opt or card["order_qty"] <= 0:
+            return
+        po = plant.place_po(card["part"], card["hub"], opt, card["order_qty"])
+        who = "Quartermaster" if opt["landed_usd"] <= 500 else "Manager"
+        log(who, "placed an order",
+            f"{po['po']}: {po['qty']} × {po['part']} from {po['vendor']} for ${po['total_usd']:,.0f}, arrives "
+            f"{po['arrives']:%b %d} at {HUBS[po['hub']]['name']}. {po['status']}.", "place_po",
+            {"part": po["part"], "hub": po["hub"], "vendor": po["vendor"]}, po)
+        bump()
+
+    @reactive.effect
+    @reactive.event(input.po_cheapest)
+    def _():
+        place("cheapest")
+
+    @reactive.effect
+    @reactive.event(input.po_fastest)
+    def _():
+        place("fastest")
+
+    # ---------------- queue
+    @render.ui
+    def queue_badge():
+        n = len(pq()["jobs"])
+        return ui.span(str(n), class_="badge-n hot" if pq()["counts"]["cure"] else "badge-n")
+
+    @render.ui
+    def cure_badge():
+        n = pq()["counts"]["cure"]
+        return ui.span(str(n), class_="badge-n hot" if n else "badge-n")
+
+    @render.ui
+    def queue_chip():
+        c = pq()["counts"]
+        return ui.span(ui.span("QUEUE", class_="k"), ui.span(ui.tags.b(str(c["cure"])), " cure", class_="risk" if c["cure"] else None),
+                       ui.span(ui.tags.b(str(c["prevention"])), " prevention"),
+                       ui.span(ui.tags.b(str(c["maintenance"])), " maintenance"), class_="plantchip")
+
+    @render.ui
+    def queue_stats():
+        q = pq()
+        c = q["counts"]
+        states = [s["state"] for j in q["jobs"] for s in j["parts_status"]]
+        moving = sum(s in ("transfer", "on order") for s in states)
+        short = sum(s == "short" for s in states)
+        return ui.div(
+            stat("CURE", str(c["cure"]), "down now", "top of the queue" if c["cure"] else "no product down",
+                 "#E10600", 100 if c["cure"] else 0, warn=bool(c["cure"])),
+            stat("PREVENTION", str(c["prevention"]), "pulled forward", "D > 3 vs peers", "#FFB800",
+                 100 if c["prevention"] else 0),
+            stat("MAINTENANCE", str(c["maintenance"]), "scheduled", "lifelines due in 30 days", "#15151E",
+                 10 * c["maintenance"]),
+            stat("PARTS", f"{states.count('reserved')}/{len(states)}", "reserved",
+                 f"{moving} moving · {short} short", "#00A651" if not short else "#E10600",
+                 100 * states.count("reserved") / max(len(states), 1), warn=bool(short)),
+            class_="stats")
+
+    @render.ui
+    def queue_table():
+        q = pq()
+        sel = queue_sel() or (q["jobs"][0]["job_id"] if q["jobs"] else None)
+        state_cls = {"reserved": "ack", "transfer": "wait", "on order": "appr", "short": "esc"}
+        rows = []
+        for j in q["jobs"]:
+            label, cls = TYPE_STYLE[j["type"]]
+            due = [f"{j['due_by']:%b %d}"]
+            if j.get("was_due"):
+                due = [ui.span(f"{j['was_due']:%b %d}", class_="was"), " ", ui.span(f"{j['due_by']:%b %d}", class_="now")]
+            parts = [ui.div(ui.span(s["state"].upper(), class_=f"st {state_cls[s['state']]}"), " ", s["part"])
+                     for s in j["parts_status"]]
+            rows.append(ui.tags.tr(
+                ui.tags.td(ui.tags.b(str(j["rank"]))), ui.tags.td(ui.span(label, class_=f"{cls} qflag")),
+                ui.tags.td(ui.tags.b(j["product_name"]), ui.div(j["site"], class_="small-note")),
+                ui.tags.td(j["component"]), ui.tags.td(*due), ui.tags.td(*parts),
+                ui.tags.td(HUBS[j["hub"]]["name"]), ui.tags.td(j["reason"], class_="small-note"),
+                class_="q-row" + (" sel" if j["job_id"] == sel else ""), **{"data-id": j["job_id"]}))
+        head = ["#", "Type", "Product", "Component", "Due", "Parts", "Hub", "Why here"]
+        return ui.div(ui.tags.table(ui.tags.thead(ui.tags.tr(*[ui.tags.th(h) for h in head])), ui.tags.tbody(*rows),
+                                    class_="opts inc"), style="overflow-x:auto;padding:4px 12px 8px")
+
+    @render.ui
+    def queue_detail():
+        q = pq()
+        sel = queue_sel() or (q["jobs"][0]["job_id"] if q["jobs"] else None)
+        j = next((x for x in q["jobs"] if x["job_id"] == sel), None)
+        if not j:
+            return ui.div()
+        label, cls = TYPE_STYLE[j["type"]]
+        go = {"cure": ("cure", "Open in Cure"), "prevention": ("prevention", "Open in Prevention"),
+              "maintenance": ("prevention", "Open lifelines")}[j["type"]]
+        rows = [("Product", f"{j['product_name']} · {j['site']}"), ("Component", j["component"]),
+                ("Due", f"{j['due_by']:%a %b %d}" + (f" (was {j['was_due']:%b %d})" if j.get("was_due") else "")),
+                ("Why", j["reason"])] + [(f"Part {s['part']}", s["text"]) for s in j["parts_status"]]
+        return ui.div(
+            ui.div(ui.div(label, class_=cls),
+                   ui.div(ui.span(j["job_id"], class_="m", style="font-family:'JetBrains Mono',monospace"),
+                          ui.h2(f"{j['product_name']}: {j['component']}"), ui.span(f"rank {j['rank']}", class_="m r"),
+                          class_="txt"), class_="bandhd"),
+            ui.div(*[ui.div(ui.div(k, class_="k"), ui.div(v, class_="v")) for k, v in rows], class_="wo-grid"),
+            ui.div(ui.tags.button(go[1], type="button", class_="btn-quiet goto", **{"data-page": go[0]}),
+                   ui.tags.button("Open Parts & sourcing", type="button", class_="btn-quiet goto",
+                                  **{"data-page": "sourcing"}), style="display:flex;gap:8px;padding:0 18px 16px"),
+            class_="proposal")
+
+    @render.ui
+    def queue_log():
+        return transcript(plant_log(), "Lifelines put 5 maintenance jobs in the queue. Press 1–3 in the demo bar.")
+
+    # ---------------- prevention
+    @render.ui
+    def prev_head():
+        plant_rev()
+        p = plant.prevention()[input.prev_product()]
+        cls = {"act": "health risk", "watch": "mode off", "normal": "health ok"}[p["action"]]
+        return ui.span(skew(f"D = {p['D']} · {p['action'].upper()}", cls),
+                       ui.span(f" worst: {p['worst_signal']} · {p['peer_count']} peers", class_="small-note"),
+                       source_note("placeholder until Matthew's AI4I model is plugged in"))
+
+    @render.plot(alt="Product signals against the peer range")
+    def prev_chart():
+        plant_rev()
+        return viz.peer_compare(plant.prevention()[input.prev_product()]["signals"])
+
+    @render.ui
+    def prev_lifelines():
+        q = pq()
+        pid = input.prev_product()
+        items = []
+        for c in lifelines(pid, plant):
+            job = next((j for j in q["jobs"] if j["product"] == pid and j["component"] == c["component"]), None)
+            pulled = job and job.get("was_due")
+            due = job["due_by"] if pulled else c["due_by"]
+            color = "#E10600" if c["used_pct"] >= 90 or pulled else "#FFB800" if c["used_pct"] >= 80 else "#00A651"
+            items.append(ui.div(
+                ui.div(ui.tags.b(c["component"]), ui.span(f"{c['used_pct']}% used", class_="small-note"),
+                       ui.span(f"due {due:%b %d}" + (f" (pulled from {c['due_by']:%b %d})" if pulled else ""),
+                               class_="t"), class_="top"),
+                ui.div(ui.div(style=f"width:{c['used_pct']}%;background:{color}"), class_="lifebar"), class_="life"))
+        return ui.div(*items, source_note("placeholder until the lifeline pipeline is plugged in")) if items else \
+            ui.p("No lifelines for this product.", class_="idle")
+
+    @render.ui
+    def prev_fleet():
+        plant_rev()
+        rows = []
+        for pid, p in sorted(plant.prevention().items(), key=lambda kv: -kv[1]["D"]):
+            pr = plant.products[pid]
+            cls = {"act": "esc", "watch": "wait", "normal": "ack"}[p["action"]]
+            rows.append(ui.tags.tr(ui.tags.td(ui.tags.b(pr["name"])), ui.tags.td(pr["site"]),
+                                   ui.tags.td(f"{p['D']:.1f}"), ui.tags.td(ui.span(p["action"].upper(), class_=f"st {cls}")),
+                                   ui.tags.td(p["worst_signal"])))
+        head = ["Product", "Site", "D", "Action", "Worst signal"]
+        return ui.div(ui.tags.table(ui.tags.thead(ui.tags.tr(*[ui.tags.th(h) for h in head])), ui.tags.tbody(*rows),
+                                    class_="opts"), style="overflow-x:auto;padding:4px 12px 8px")
+
+    # ---------------- cure
+    @render.ui
+    def cure_list():
+        q = pq()
+        alerts_rev()
+        if not plant.cures:
+            return box("Products down", ui.p("No product is down. Press 2 in the demo bar to have Tower 19 throw "
+                                             "E-STALL.", class_="idle"), pad=True)
+        out = []
+        for c in plant.cures:
+            j = next((x for x in q["jobs"] if x.get("incident") == c["id"]), {})
+            pr = plant.products[c["product"]]
+            a = next((x for x in w.alerts if x["ref"] == pr["name"]), None)
+            rows = [("Error code", f"{c['code']}: {c['meaning']}"), ("Likely component", c["component"]),
+                    ("Downtime cost", f"~${c['downtime_usd_per_h']:.0f}/h"),
+                    ("Priority job", f"{j.get('job_id', '')} · rank {j.get('rank', '')}"),
+                    *[(f"Part {s['part']}", s["text"]) for s in j.get("parts_status", [])],
+                    ("SendGrid email", f"{a['status']} · to {', '.join(a['to'])}" if a else "not sent")]
+            out.append(ui.div(
+                ui.div(ui.div("CURE", class_="flag red"),
+                       ui.div(ui.span(c["id"], class_="m", style="font-family:'JetBrains Mono',monospace"),
+                              ui.h2(f"{pr['name']} is down"), ui.span(f"opened {c['opened']:%H:%M} · {pr['site']}",
+                                                                       class_="m r"), class_="txt"), class_="bandhd"),
+                ui.div(*[ui.div(ui.div(k, class_="k"), ui.div(v, class_="v")) for k, v in rows], class_="wo-grid"),
+                ui.div(ui.tags.button("Open the email in Alerts", type="button", class_="btn-quiet goto",
+                                      **{"data-page": "alerts"}),
+                       source_note("error-code table and downtime cost are placeholders until Mudit's version lands"),
+                       style="display:flex;gap:12px;align-items:center;padding:0 18px 16px"),
+                class_="proposal"))
+        return ui.div(*out, style="display:flex;flex-direction:column;gap:20px")
+
+    # ---------------- sourcing
+    @render.ui
+    def hub_table():
+        q = pq()
+        rows = []
+        for hub in HUBS:
+            for part in VENDORS:
+                c = order_card(part, hub, plant, q["allocation"])
+                short = c["shortfall"] > 0
+                rows.append(ui.tags.tr(
+                    ui.tags.td(HUBS[hub]["name"]), ui.tags.td(part), ui.tags.td(str(c["on_hand"])),
+                    ui.tags.td(str(c["reserved"])), ui.tags.td(str(c["inbound"])),
+                    ui.tags.td(f"{c['scheduled']:g} + {c['predicted']:g} + {c['buffer']}"),
+                    ui.tags.td(ui.span(f"{c['shortfall']:g}" if short else "OK", class_="st esc" if short else "st ack")),
+                    ui.tags.td(f"{c['need_by']:%b %d}" if c["need_by"] else "—")))
+        head = ["Hub", "Part", "On hand", "Reserved", "Inbound", "Need (jobs + predicted + buffer)", "Short", "Need by"]
+        return ui.div(ui.tags.table(ui.tags.thead(ui.tags.tr(*[ui.tags.th(h) for h in head])), ui.tags.tbody(*rows),
+                                    class_="opts"),
+                      source_note("placeholder sourcing model (idea.md 7a) until Mudit's lands"),
+                      style="overflow-x:auto;padding:4px 12px 10px")
+
+    @render.ui
+    def order_card_ui():
+        q = pq()
+        c = order_card(input.src_part(), input.src_hub(), plant, q["allocation"])
+        hub = HUBS[c["hub"]]["name"]
+        if c["order_qty"] <= 0:
+            return box(f"Order card · {c['part']} at {hub}", ui.p(
+                f"Enough stock: position {c['position']} covers {c['need']:g} (jobs + predicted + {BUFFER} buffer). "
+                "No order needed.", class_="idle"), pad=True)
+
+        def opt_card(title: str, o: dict | None, key: str):
+            if not o:
+                return ui.div(ui.div(title, class_="l"), ui.p("No vendor arrives in time.", class_="idle"), class_="ocard")
+            ob = f"order by {o['order_by']:%b %d}" if o.get("order_by") else "start now"
+            return ui.div(ui.div(title, class_="l"), ui.div(o["vendor"], class_="vn"),
+                          ui.div(ui.tags.b(f"${o['landed_usd']:,.0f}"), ui.span(f" for {c['order_qty']}"), class_="v"),
+                          ui.div(f"arrives {o['arrives']:%b %d} · {o['lead_days']} days · {ob}", class_="s"),
+                          ui.div(o.get("reason", ""), class_="s") if o.get("reason") else None,
+                          ui.input_action_button(f"po_{key}", ("Order" if o["landed_usd"] <= 500 else "Approve and order")
+                                                 + f" · ${o['landed_usd']:,.0f}",
+                                                 class_="btn-approve" if key == "cheapest" else "btn-quiet"),
+                          class_="ocard")
+
+        late = [o["vendor"] + (f" (arrives {o['arrives']:%b %d})") for o in c["late"]]
+        rows = [ui.tags.tr(ui.tags.td(o["vendor"]), ui.tags.td(f"${o['unit_usd']:,.0f}"), ui.tags.td(f"{o['lead_days']} d"),
+                           ui.tags.td(f"{o['arrives']:%b %d}"),
+                           ui.tags.td(ui.span("in time" if o["in_time"] else "late", class_="st ack" if o["in_time"] else "st esc")),
+                           ui.tags.td(f"${o['landed_usd']:,.0f}")) for o in c["options"]]
+        pos = [p for p in plant.pos if p["part"] == c["part"] and p["hub"] == c["hub"]]
+        return ui.div(
+            ui.div(ui.div("ORDER", class_="flag amber"),
+                   ui.div(ui.span(c["part"], class_="m", style="font-family:'JetBrains Mono',monospace"),
+                          ui.h2(f"Order {c['order_qty']} for {hub}"),
+                          ui.span(f"need by {c['need_by']:%b %d}: {c['need_why']}", class_="m r"), class_="txt"),
+                   class_="bandhd"),
+            ui.div(opt_card("CHEAPEST IN TIME", c["cheapest"], "cheapest"), opt_card("FASTEST", c["fastest"], "fastest"),
+                   class_="ocards"),
+            ui.p(("Too late: " + "; ".join(late) + ". ") if late else "", f"Position {c['position']} (on hand "
+                 f"{c['on_hand']} + inbound {c['inbound']}) vs need {c['need']:g} = {c['scheduled']:g} jobs + "
+                 f"{c['predicted']:g} predicted + {BUFFER} buffer. Orders over $500 need a manager.",
+                 class_="why", style="padding:0 18px"),
+            ui.div(ui.tags.table(ui.tags.thead(ui.tags.tr(*[ui.tags.th(h) for h in
+                                                            ["Vendor", "Unit", "Lead", "Arrives", "", "Landed"]])),
+                                 ui.tags.tbody(*rows), class_="opts"), style="overflow-x:auto;padding:8px 18px"),
+            ui.div(*[ui.p(f"{p['po']} · {p['qty']} × {p['part']} · {p['vendor']} · ${p['total_usd']:,.0f} · arrives "
+                          f"{p['arrives']:%b %d} · {p['status']}", class_="approved") for p in pos],
+                   style="padding:0 18px 12px"),
+            class_="proposal")
+
+    # ---------------- internal fab
+    @render.ui
+    def fab_cards():
+        plant_rev()
+        st = plant.fab_statuses()
+        cards = []
+        for mid, m in FAB_MACHINES.items():
+            s = st[mid]
+            cls = {"NORMAL": "health ok", "CAUTION": "mode off", "FAILURE WARNING": "health risk"}.get(s["status"], "mode off")
+            prob = s["failure_probability"]
+            r = plant.fab_readings[mid]
+            fcs = [fab_forecast(part, st) for part in m["makes"]]
+            cards.append(ui.div(
+                ui.div(ui.div(m["line"].upper(), class_="l"), ui.h3(m["name"], style="margin:2px 0 6px"),
+                       skew(s["status"], cls), class_="fabhead"),
+                stat("FAILURE PROBABILITY", f"{100 * prob:.0f}%" if prob is not None else "n/a", "", s["source"],
+                     "#E10600" if (prob or 0) >= .7 else "#FFB800" if (prob or 0) >= .4 else "#00A651", 100 * (prob or 0),
+                     warn=(prob or 0) >= .7),
+                ui.div(ui.div(ui.div("Hydraulic pressure", class_="k"), ui.div(f"{r['Hydraulic_Pressure(bar)']:.0f} bar", class_="v")),
+                       ui.div(ui.div("Torque", class_="k"), ui.div(f"{r['Torque(Nm)']:.1f} Nm", class_="v")),
+                       *[ui.div(ui.div(f"Makes {f['part']}", class_="k"),
+                                ui.div(f"{f['lead_time_days']} days in-house", class_="v"),
+                                ui.div(f["reason"], class_="small-note")) for f in fcs],
+                       class_="wo-grid", style="padding:12px 16px"),
+                class_="box fabcard"))
+        return ui.div(ui.div(*cards, class_="fabgrid"),
+                      source_note("status: Hari's machine_downtime_model (real model) · in-house lead time: placeholder "
+                                  "until fab_forecast lands"))
 
     def live_alerts() -> list[dict]:
         alerts_rev()

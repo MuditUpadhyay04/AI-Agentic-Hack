@@ -237,3 +237,30 @@ table.opts tr.rec td { background: #E8F6EE; font-weight: 600; }
 .small-note { font-size: .78rem; color: var(--quiet); }
 .pagehead h1 { margin: 2px 0 0; font-family: 'Titillium Web', sans-serif; font-size: 34px; font-weight: 900; line-height: 1.1; }
 .pagehead .sub { margin-top: 4px; font-size: 13px; color: var(--body); }
+
+/* v0.2 */
+.srcnote { display: inline-block; font-size: 11px; color: var(--quiet); border: 1px dashed #D5D6DD; border-radius: 2px; padding: 2px 6px; margin: 6px 0 0 8px; }
+.pickrow { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.pickrow .form-group { margin: 0; min-width: 200px; }
+.demofloat { position: fixed; right: 16px; bottom: 16px; z-index: 50; background: #fff; box-shadow: 0 4px 16px rgba(21,21,30,.14); border-style: solid; max-width: calc(100vw - 32px); }
+.qflag { display: inline-flex; padding: 2px 14px 2px 8px; font-size: 12px; }
+table.inc tr.q-row { cursor: pointer; }
+table.inc tr.q-row:hover td, table.inc tr.q-row.sel td { background: #F7F7F9; }
+.life { padding: 8px 0; border-bottom: 1px solid var(--soft); }
+.life:last-of-type { border-bottom: 0; }
+.life .top { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 13px; }
+.life .top .t { margin-left: auto; font-size: 12px; color: var(--body); }
+.lifebar { height: 8px; background: #ECECF1; margin-top: 6px; transform: skewX(-20deg); }
+.lifebar > div { height: 8px; }
+.ocards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; padding: 16px 18px; }
+.ocard { border: 1px solid #D5D6DD; border-radius: 4px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+.ocard .l { font-family: 'Titillium Web', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .1em; color: var(--quiet); }
+.ocard .vn { font-weight: 600; font-size: 16px; }
+.ocard .v b { font-family: 'Titillium Web', sans-serif; font-size: 30px; }
+.ocard .s { font-size: 12px; color: var(--quiet); }
+.ocard .btn { margin-top: 8px; align-self: flex-start; }
+.fabgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.fabcard .fabhead { padding: 14px 16px 0; }
+.fabcard .fabhead .l { font-family: 'Titillium Web', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .1em; color: var(--quiet); }
+.fabcard .stat { border-top: 1px solid var(--soft); border-bottom: 1px solid var(--soft); margin-top: 12px; }
+.page { padding-bottom: 96px; }
