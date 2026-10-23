@@ -1,7 +1,7 @@
 """Sensor Futures: what hardware the next tower should carry, priced by the failures it would have caught.
 
 For every drive failure in the fleet's history, the crew replays the tower's last 120 days twice: with the
-sensors the TR-08 has today, and with one future hardware slot added. A slot is worth something when it
+sensors the ST-1 has today, and with one future hardware slot added. A slot is worth something when it
 moves the first alarm early enough to turn an unplanned failure into a planned repair (the part arrives
 and the batched route reaches the tower before it fails). Value per tower-year, against the slot's cost,
 is the hardware roadmap R&D gets from the fleet.
@@ -51,7 +51,7 @@ def replay(fleet: Fleet, e: TowerEconomics = TowerEconomics()) -> pd.DataFrame:
     """One row per historical failure: first alarm with today's sensors and with each slot, and the value."""
     log = fleet.log_df
     rows = []
-    daily_kwh = 26.9  # annual mean tracked kWh/day of a TR-08 (data/tr08_dallas_energy_meta.json / 365)
+    daily_kwh = 26.9  # annual mean tracked kWh/day of a ST-1 (data/tower_dallas_energy_meta.json / 365)
     fcost = failure_cost(e, daily_kwh)
     for inc in fleet.incidents:
         h = log[(log.tower_id == inc["tower_id"]) & (log.day <= inc["day"]) & (log.day > inc["day"] - 120)]

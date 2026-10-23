@@ -62,7 +62,7 @@ def tools_for(w: World) -> dict:
 
     @tool
     def search_manual(query: str, manual: str = "vm07_mill_manual.md") -> dict:
-        """Search an equipment manual (vm07_mill_manual.md or janta_tower_drive_public.md) for lines about query."""
+        """Search an equipment manual (vm07_mill_manual.md or tower_drive_manual.md) for lines about query."""
         return w.search_manual(query, manual)
 
     @tool
@@ -72,7 +72,7 @@ def tools_for(w: World) -> dict:
 
     @tool
     def fleet_overview() -> dict:
-        """Which Janta towers are flagged today, by which sensor."""
+        """Which solar towers are flagged today, by which sensor."""
         return w.fleet_overview()
 
     @tool
@@ -127,7 +127,7 @@ def tools_for(w: World) -> dict:
 
     @tool
     def tracking_tradeoff() -> dict:
-        """Energy given up by step tracking (Shadow Calculator field model) vs drive starts saved."""
+        """Energy given up by step tracking (field energy model) vs drive starts saved."""
         return w.tracking_tradeoff()
 
     @tool
@@ -137,7 +137,7 @@ def tools_for(w: World) -> dict:
 
     @tool
     def design_change_request() -> dict:
-        """Draft the TR-09 design-change request from the fleet evidence."""
+        """Draft the ST-2 design-change request from the fleet evidence."""
         return w.design_change_request()
 
     @tool

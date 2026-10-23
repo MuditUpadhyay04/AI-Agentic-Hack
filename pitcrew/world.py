@@ -210,7 +210,7 @@ class World:
         p = install_slot(self.passports[asset_id], signal_keyword)
         self.passports[asset_id] = p
         unlocked = [d for s in p["slots"] if s["status"] == "installed" for d in s["unlocks"]]
-        if asset_id.startswith("TR-08"):
+        if asset_id.startswith("ST-1"):
             self.installed_slots = tuple(sorted(set(self.installed_slots) | set(unlocked)))
         return self._rec("install_slot", {"asset_id": asset_id, "slot": signal_keyword},
                          {"asset_id": asset_id, "detectors_live": unlocked})

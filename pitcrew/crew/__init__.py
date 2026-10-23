@@ -59,7 +59,7 @@ class Crew:
     def plan_tower(self, tid: int = 7) -> dict:
         from . import strands_crew as S
 
-        return self._try(lambda: S.plan(self.w, f"Janta tower fleet: check today's flags and plan for Tower {tid}.",
+        return self._try(lambda: S.plan(self.w, f"Solar tower fleet: check today's flags and plan for Tower {tid}.",
                                         "tower", self._model()),
                          lambda: offline.tower_plan(self.w, tid))
 
@@ -77,7 +77,7 @@ class Crew:
         base = offline.improve(self.w)
         if self.mode == "offline":
             return base
-        extra = self._try(lambda: S.single(self.w, "Kaizen", "Review the fleet history and draft the TR-09 "
+        extra = self._try(lambda: S.single(self.w, "Kaizen", "Review the fleet history and draft the ST-2 "
                                                                "design-change request.", self._model()),
                           lambda: {"turns": []})
         base["turns"] = extra.get("turns", []) + base["turns"]

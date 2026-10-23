@@ -108,10 +108,10 @@ def run_mill_panel():
 
 def run_tower_panel():
     return ui.nav_panel(
-        "Run · Janta towers",
+        "Run · Towers",
         ui.layout_columns(
             ui.div(
-                ui.card(ui.card_header("Fleet: 48 TR-08 towers, three DFW sites (simulated drive model)"),
+                ui.card(ui.card_header("Fleet: 48 ST-1 towers, three DFW sites (simulated drive model)"),
                         ui.output_plot("fleet_map", height="300px")),
                 ui.card(ui.card_header("Selected tower"), ui.output_plot("tower_chart", height="300px")),
                 ui.output_ui("tower_option_cards"),
@@ -125,7 +125,7 @@ def run_tower_panel():
                         ui.div(ui.input_action_button("tower_assess", "Crew: assess and price options",
                                                       class_="btn-primary"), class_="step-btns"),
                         ui.p("Park & Price: keep tracking, coast, park at the best azimuth or send a technician "
-                             "tomorrow - each priced with the Shadow Calculator energy model and a weather "
+                             "tomorrow - each priced with the field energy model and a weather "
                              "Monte Carlo of the drive.", class_="small-note")),
                 ui.card(ui.card_header("Crew"), ui.output_ui("tower_transcript")),
                 ui.output_ui("tower_approval"),
@@ -147,7 +147,7 @@ def improve_panel():
             ),
             ui.div(
                 ui.card(ui.card_header("Crew"), ui.output_ui("kaizen_transcript")),
-                ui.card(ui.card_header("Design-change request for TR-09 (draft)"), ui.output_ui("kaizen_dcr")),
+                ui.card(ui.card_header("Design-change request for ST-2 (draft)"), ui.output_ui("kaizen_dcr")),
             ),
             col_widths=[7, 5]))
 
@@ -168,7 +168,7 @@ def grow_panel():
                 ui.card(ui.card_header("Crew"), ui.output_ui("grow_transcript")),
                 ui.card(ui.card_header("Future hardware slots"),
                         ui.p("Signals the manual lists as not fitted become slots: the agents that need them already "
-                             "exist and switch on the day the sensor is installed. Try it on the Janta tower: "
+                             "exist and switch on the day the sensor is installed. Try it on the solar tower: "
                              "install the acoustic-emission slot, then look at Tower 42 on the Towers tab.",
                              class_="small-note"),
                         ui.output_ui("slot_buttons")),
@@ -190,7 +190,7 @@ def arch_panel():
         ("Guardrails", "AgentCore Policy (Cedar): POs over $500 and every setpoint change need the foreman"),
         ("Knowledge", "Bedrock Knowledge Base over manuals; AgentCore Memory for incidents; passports in S3"),
         ("Suppliers", "A2A: supplier agents on their own runtimes (agentcore/supplier_a2a.py)"),
-        ("Energy", "Table exported from the Janta Shadow Calculator field model (scripts/export_energy_table.py)"),
+        ("Energy", "Table exported from the two-wing field model (scripts/export_energy_table.py)"),
         ("Data", "AI4I 2020 (UCI 601); tower drive model anchored to DuraMAT tracker motor current, NASA IMS"),
     ], columns=["Piece", "On AWS"])
     return ui.nav_panel("Architecture", ui.card(ui.HTML(svg)),
@@ -485,9 +485,9 @@ def server(input, output, session):
     def slot_buttons():
         grow()
         slots_rev()
-        tr = w.passports.get("TR-08")
+        tr = w.passports.get("ST-1")
         if not tr:
-            return ui.p("Onboard janta_tower_drive_public.md to see the tower's slots.", class_="small-note")
+            return ui.p("Onboard tower_drive_manual.md to see the tower's slots.", class_="small-note")
         chips = [ui.span(s["signal"], class_="slot installed" if s["status"] == "installed" else "slot")
                  for s in tr["slots"]]
         return ui.div(*chips, ui.div(ui.input_action_button("install_ae", "Install the acoustic-emission slot",
@@ -498,22 +498,22 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.install_ae)
     def _():
-        if "TR-08" not in w.passports:
+        if "ST-1" not in w.passports:
             return
-        w.install_slot("TR-08", "acoustic")
+        w.install_slot("ST-1", "acoustic")
         slots_rev.set(slots_rev() + 1)
         g = grow()
         grow.set({"turns": g["turns"] + [{"agent": "Onboarder", "stage": "Grow", "tools": w.trace[-1:],
-                                          "say": "Acoustic-emission slot installed on the TR-08 passport: the bearing "
+                                          "say": "Acoustic-emission slot installed on the ST-1 passport: the bearing "
                                                  "detector is live fleet-wide. Check Tower 42."}],
                   "passport": g["passport"]})
 
     @reactive.effect
     @reactive.event(input.install_grease)
     def _():
-        if "TR-08" not in w.passports:
+        if "ST-1" not in w.passports:
             return
-        w.install_slot("TR-08", "grease")
+        w.install_slot("ST-1", "grease")
         slots_rev.set(slots_rev() + 1)
         g = grow()
         grow.set({"turns": g["turns"] + [{"agent": "Onboarder", "stage": "Grow", "tools": w.trace[-1:],

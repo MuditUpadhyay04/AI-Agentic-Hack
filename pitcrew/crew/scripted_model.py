@@ -19,7 +19,7 @@ CALLS = {
     "Diagnostician": lambda task: ([("search_manual", {"query": "tool change insert wear shift"})] if "VM-07" in task
                                    else [("diagnose_tower", {"tower_id": _tid(task)}),
                                          ("search_manual", {"query": "re-grease seals",
-                                                            "manual": "janta_tower_drive_public.md"})]),
+                                                            "manual": "tower_drive_manual.md"})]),
     "Race Engineer": lambda task: ([("price_mill_options", {})] if "VM-07" in task
                                    else [("price_tower_options", {"tower_id": _tid(task)})]),
     "Quartermaster": lambda task: [("check_stock", {"pn": "INSERT-CNMG-L" if "VM-07" in task else "GREASE-KIT-SD"})],

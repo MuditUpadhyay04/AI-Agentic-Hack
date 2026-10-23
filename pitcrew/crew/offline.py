@@ -117,7 +117,7 @@ def tower_plan(w: World, tid: int = 7) -> dict:
         pct=round(100 * (p["value"] - 1)), deg=p["value"], val=p["value"], detector=p["detector"])
     query = {"friction": "re-grease slew drive grease", "backlash": "bolts re-torque reversal backlash",
              "grease_water": "seals leaks condensation", "acoustic": "bearing acoustic emission replace drive"}
-    m = w.search_manual(query.get(p["detector"], "slew drive"), manual="janta_tower_drive_public.md")
+    m = w.search_manual(query.get(p["detector"], "slew drive"), manual="tower_drive_manual.md")
     rul = d.get("rul") or {}
     rul_txt = (f" Trend alone says ~{rul['p50']:.0f} days to the limit (P10 {rul['p10']:.0f})."
                if rul.get("p50") is not None and rul["p50"] < 120 else
@@ -210,7 +210,7 @@ def improve(w: World) -> dict:
     top = sf["slots"][0] if sf["slots"] else None
     tr.speak("Kaizen", (
         f"Two findings for R&D. Step tracking in 15 deg steps gives up {trade['energy_loss_step15_pct']}% of a "
-        f"year's energy (Shadow Calculator field model) and cuts drive starts {trade['starts_cut_pct']:.0f}%. "
+        f"year's energy (field energy model) and cuts drive starts {trade['starts_cut_pct']:.0f}%. "
         f"And of {sf['failures']} past failures, today's sensors flagged {sf['caught_with_todays_sensors']} a week or "
         f"more ahead - nobody was watching: a crew is worth ~{_money(sf['crew_value_usd_per_tower_year'])} per "
         f"tower-year before any new hardware."
@@ -218,7 +218,7 @@ def improve(w: World) -> dict:
            f"tower-year for {_money(top['unit_usd'])} of hardware." if top else "")), i)
     i = tr.as_agent("Kaizen")
     dcr = w.design_change_request()
-    tr.speak("Kaizen", f"Drafted {len(dcr['items'])} design changes for TR-09 for engineering to review.", i)
+    tr.speak("Kaizen", f"Drafted {len(dcr['items'])} design changes for ST-2 for engineering to review.", i)
     return {"turns": tr.turns, "rules": rules, "lots": lots, "futures": sf, "dcr": dcr, "tracking": trade}
 
 

@@ -45,7 +45,7 @@
   <rect x="34" y="320" width="492" height="70" rx="8" class="agent"/>
   <text x="46" y="342" class="h">Kaizen agent</text>
   <text x="46" y="360" class="s">rules from data (AI4I) · supplier-lot rates · Sensor Futures</text>
-  <text x="46" y="376" class="s">→ design-change request for the Design studio / Tower lab (TR-09)</text>
+  <text x="46" y="376" class="s">→ design-change request for the Design studio / Tower lab (ST-2)</text>
 
   <rect x="560" y="284" width="520" height="120" rx="10" class="lane"/>
   <text x="574" y="306" class="h">GROW (per machine, sensor, supplier, site)</text>
@@ -63,7 +63,7 @@
   <rect x="466" y="454" width="200" height="74" rx="8" class="k"/>
   <text x="478" y="476" class="h">Asset passports</text><text x="478" y="494" class="s">signed limits + slots</text><text x="478" y="510" class="s">(the unit of growth)</text>
   <rect x="682" y="454" width="200" height="74" rx="8" class="k"/>
-  <text x="694" y="476" class="h">Energy model</text><text x="694" y="494" class="s">Shadow Calculator table:</text><text x="694" y="510" class="s">kWh by azimuth and day</text>
+  <text x="694" y="476" class="h">Energy model</text><text x="694" y="494" class="s">Field model table:</text><text x="694" y="510" class="s">kWh by azimuth and day</text>
   <rect x="898" y="454" width="166" height="74" rx="8" class="k"/>
   <text x="910" y="476" class="h">Observability</text><text x="910" y="494" class="s">AgentCore traces,</text><text x="910" y="510" class="s">cost per decision</text>
 </svg>

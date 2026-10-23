@@ -1,11 +1,11 @@
-# Janta solar tower — slew drive operations summary (public-safe)
+# Solar tower — slew drive operations summary (public-safe)
 
 Public-safe summary for the hackathon account. It holds no values from the drive maker's proprietary
 datasheet: ratings marked "class typical" are typical for a 14-inch worm slew drive. Fill exact ratings from
-the datasheet on Janta's own server only.
+the maker's datasheet outside this repo.
 
 - Asset class: Solar tower slew drive
-- Model: TR-08 tower, 14-inch worm slew drive (class typical)
+- Model: ST-1 tower, 14-inch worm slew drive (class typical)
 - Agent template: slew-drive-v1
 
 ## Operating limits

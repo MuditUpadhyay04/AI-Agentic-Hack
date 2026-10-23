@@ -39,7 +39,7 @@ def main() -> None:
     e = crew.execute(p)
     show("RUN · mill VM-07 after Approve", e["turns"])
     t = crew.plan_tower(a.tower)
-    show(f"RUN · Janta tower {a.tower}", t["turns"])
+    show(f"RUN · tower {a.tower}", t["turns"])
     te = crew.execute(t) if t.get("recommendation") else {"turns": []}
     show(f"RUN · tower {a.tower} after Approve", te["turns"])
     k = crew.improve()
@@ -48,8 +48,8 @@ def main() -> None:
         print(f"  - {item['id']} {item['area']}: {item['change']}\n      {item['evidence']}")
     g = crew.grow("lathe_l2_manual.md")
     show("GROW · Onboarder", g["turns"])
-    w.onboard_manual("janta_tower_drive_public.md")
-    w.install_slot("TR-08", "acoustic")
+    w.onboard_manual("tower_drive_manual.md")
+    w.install_slot("ST-1", "acoustic")
     t42 = crew.plan_tower(42)
     show("GROW · acoustic slot installed, tower 42", t42["turns"])
     out = {"mill": p, "mill_exec": e, "tower": t, "tower_exec": te, "improve": k, "grow": g, "tower42": t42,

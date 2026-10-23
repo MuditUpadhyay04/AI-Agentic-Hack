@@ -1,4 +1,4 @@
-"""A fleet of Janta towers on worm-gear slew drives: what wears, what the controller can see, and when.
+"""A fleet of solar towers on worm-gear slew drives: what wears, what the controller can see, and when.
 
 The model is deliberately small and every coefficient lives in ``DriveModel`` so the team can argue with
 it (and so the Kaizen loop can refit it from field data). It follows the field literature the playbook
@@ -14,7 +14,7 @@ cites:
 - A slewing-bearing defect grows like the NASA IMS run-to-failure curves (slow, then fast). The output
   turns at under 1.5 rpm, so it is seen first on the worm/motor side, and earliest by acoustic emission.
 
-What the TR-08 controller sees today (an assumption to confirm with engineering): motor energy and current
+What the ST-1 controller sees today (an assumption to confirm with engineering): motor energy and current
 per move, the motor encoder, ambient temperature and site wind. Vibration, grease condition, acoustic
 emission, a drive torque sensor and an output encoder are *future hardware slots*: simulated here as
 ground truth so ``futures.py`` can price what each would have caught.

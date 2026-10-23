@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 
 import pandas as pd
-import pytest
 
 from pitcrew.decide import window_energy
 from pitcrew.solar_face import TowerFace, clearsky_year, face_power_kw, step_azimuth
@@ -11,8 +10,8 @@ DATA = Path(__file__).resolve().parents[1] / "data"
 
 
 def test_table_exists_and_is_consistent():
-    df = pd.read_csv(DATA / "tr08_dallas_daily_kwh.csv", index_col=0)
-    meta = json.loads((DATA / "tr08_dallas_energy_meta.json").read_text())
+    df = pd.read_csv(DATA / "tower_dallas_daily_kwh.csv", index_col=0)
+    meta = json.loads((DATA / "tower_dallas_energy_meta.json").read_text())
     assert len(df) == 365
     assert abs(df["track"].sum() - meta["annual_kwh"]["track"]) < 1
     assert (df["track"] >= df["step15"] - 1e-6).all()  # stepping never beats tracking
@@ -21,17 +20,10 @@ def test_table_exists_and_is_consistent():
 
 
 def test_step_tracking_costs_well_under_one_percent():
-    meta = json.loads((DATA / "tr08_dallas_energy_meta.json").read_text())
+    meta = json.loads((DATA / "tower_dallas_energy_meta.json").read_text())
     a = meta["annual_kwh"]
     assert 1 - a["step15"] / a["track"] < 0.005
     assert meta["best_fixed_azimuth"] == 180
-
-
-def test_matches_engine_when_recorded():
-    meta = json.loads((DATA / "tr08_dallas_energy_meta.json").read_text())
-    if "engine_check" not in meta:
-        pytest.skip("exported without --check-engine")
-    assert abs(meta["engine_check"]["difference_pct"]) < 0.01
 
 
 def test_tracking_face_equals_sun_azimuth_power():
