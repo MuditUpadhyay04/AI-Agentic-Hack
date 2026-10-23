@@ -14,3 +14,4 @@ websockets>=12
 xgboost>=3.2
 scikit-learn>=1.9
 joblib>=1.6
+lightgbm>=4.5

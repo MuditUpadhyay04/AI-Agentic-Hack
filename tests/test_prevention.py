@@ -30,3 +30,13 @@ def test_predict_failure_tool_is_traced():
     w = World()
     r = w.predict_failure(162)
     assert r["action"] == "act" and w.trace[-1]["tool"] == "predict_failure"
+
+
+def test_both_teammate_models_load_side_by_side():
+    """Matthew's and Hari's folders both ship predict.py; each must load as itself."""
+    plant = Plant()
+    assert plant.prevention()["DS-07"]["source"].startswith("failure_model")
+    assert all(s["status"] == "NORMAL" for s in plant.fab_statuses().values())
+    plant.fab_l3_degrades()
+    s = plant.fab_statuses()["MK-L3"]
+    assert s["status"] == "FAILURE WARNING" and s["source"] == "machine_downtime_model"

@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import copy
 import datetime as dt
+import importlib.util
 import math
 import sys
+import warnings
 from functools import lru_cache
 from pathlib import Path
 
@@ -52,15 +54,26 @@ RESTORE_DAYS = 5  # when only the emergency buffer is short, restore it within t
 _predict = None
 
 
+def _load(name: str, path: Path):
+    """Import a teammate's module by file under its own name: both model folders ship a ``predict.py``."""
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        try:
+            spec.loader.exec_module(mod)
+        except Exception:
+            del sys.modules[name]
+            raise
+    return sys.modules[name]
+
+
 def _model():
     global _predict
     if _predict is None:
-        d = str(ROOT / "machine_downtime_model")
-        if d not in sys.path:
-            sys.path.insert(0, d)
-        from predict import predict_with_details  # Hari's module
-
-        _predict = predict_with_details
+        with warnings.catch_warnings():  # pickled with an older scikit-learn; loads fine
+            warnings.simplefilter("ignore")
+            _predict = _load("hari_downtime_predict", ROOT / "machine_downtime_model" / "predict.py").predict_with_details
     return _predict
 
 
@@ -100,12 +113,7 @@ _failure = None
 def _failure_model():
     global _failure
     if _failure is None:
-        d = str(ROOT / "failure_model")
-        if d not in sys.path:
-            sys.path.insert(0, d)
-        import predict as matthew  # failure_model/predict.py
-
-        _failure = matthew
+        _failure = _load("matthew_failure_predict", ROOT / "failure_model" / "predict.py")
     return _failure
 
 
