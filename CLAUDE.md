@@ -12,7 +12,7 @@ Three service loops feed one priority queue of jobs; an iron-tight supply chain 
 | Piece | What it does | Owner |
 |---|---|---|
 | Maintenance | Component lifelines → scheduled jobs weeks ahead | Teammate (maintenance pipeline) |
-| Prevention | Product A vs its peers (telemetry rate, error codes, performance) → re-rank the queue, divert parts | Team |
+| Prevention | Product A vs its peers (telemetry rate, error codes, performance) → re-rank the queue, divert parts | Matthew (failure-prediction model) |
 | Cure | Error codes → top-priority job, SendGrid email, escalation | Team |
 | Sourcing (outside) | Hub inventory + upcoming jobs + emergency buffer → when to order; cheapest vs fastest authorized vendor | Mudit |
 | Internal fab (inside) | Factory machine downtime → production capacity and in-house part lead times | Hari |

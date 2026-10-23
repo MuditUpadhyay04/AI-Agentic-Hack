@@ -83,7 +83,7 @@ Three ways a job is born, one queue, one parts system:
 | Loop | Trigger | Urgency | Owner |
 |---|---|---|---|
 | **Cure** | Product throws error codes / goes down | Highest — customer has downtime now | Team (crew + SendGrid) |
-| **Prevention** | Product A behaves worse than its peers B (less telemetry, more error codes, worse performance) | Moves jobs up the queue in proportion to how different A is | Team |
+| **Prevention** | Product A behaves worse than its peers B (less telemetry, more error codes, worse performance) | Moves jobs up the queue in proportion to how different A is | Matthew (failure-prediction model) |
 | **Maintenance** | A component reaches the end of its lifeline | Planned weeks ahead | Teammate (maintenance pipeline) |
 | **Sourcing** | Upcoming jobs + emergency buffer exceed stock | Order at the right time | Mudit (with Claude) |
 | **Internal fab** | Factory machine downtime | Changes production and in-house part lead times | Hari |
