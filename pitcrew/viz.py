@@ -13,8 +13,8 @@ import pandas as pd  # noqa: E402
 
 from . import mill as M  # noqa: E402
 
-INK, QUIET, GRID = "#1f2933", "#7b8794", "#e4e7eb"
-ACCENT, WALL, SAFE, WARN = "#2563eb", "#d64545", "#2f9e44", "#e8590c"
+INK, QUIET, GRID = "#15151E", "#6B6E7B", "#EFEFF3"
+ACCENT, WALL, SAFE, WARN = "#2E5BD8", "#E10600", "#00A651", "#C26A00"
 
 plt.rcParams.update({
     "font.family": "DejaVu Sans", "font.size": 10, "axes.edgecolor": GRID, "axes.labelcolor": INK,
@@ -31,30 +31,35 @@ def _fig(w=7.2, h=3.4):
 
 
 # ------------------------------------------------------------------ mill
-def mill_signals(rows: list[dict], now: int, title: str = "") -> plt.Figure:
+def mill_signals(rows: list[dict], now: int, title: str = "", setpoint_kw: float | None = None) -> plt.Figure:
     df = pd.DataFrame(rows)
     df = df[df.part <= now]
-    fig, ax = _fig()
-    fig.subplots_adjust(right=0.88)
-    ax.plot(df.part, df.power_w / 1000, color=ACCENT, lw=2, label="Spindle power (kW)")
-    ax.axhline(9.0, color=WALL, lw=1.2, ls="--")
-    ax.text(df.part.min() + 0.3, 9.08, "Power ceiling 9.0 kW (PWF wall)", color=WALL, fontsize=8.5)
-    ax2 = ax.twinx()
-    ax2.plot(df.part, df.strain / 11000, color=QUIET, lw=1.5, label="Wear x torque / limit")
-    ax2.set_ylim(0, 1.05)
-    ax2.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0))
-    ax2.set_ylabel("overstrain wall used", color=QUIET)
-    ax2.spines["top"].set_visible(False)
-    ax2.grid(False)
+    fig, ax = _fig(7.2, 3.0)
+    fig.subplots_adjust(top=0.95, bottom=0.17)
+    ax.axhspan(8.1, 9.0, color=WALL, alpha=0.07, lw=0)
+    ax.axhline(9.0, color=WALL, lw=1.3, ls="--")
+    ax.text(df.part.min() + 0.2, 9.1, "PWF limit 9.0 kW", color=WALL, fontsize=8.5)
+    ax.plot(df.part, df.power_w / 1000, color=INK, lw=2)
     onset = df[df.creeping].part.min() if df.creeping.any() else None
     if onset is not None and not math.isnan(onset):
-        ax.axvspan(onset, df.part.max() + 0.5, color=WARN, alpha=0.06)
-        ax.text(onset - 0.3, 5.15, "new steel lot", color=WARN, fontsize=8.5, ha="right")
+        ax.axvline(onset - 0.5, color=QUIET, lw=1, ls=":")
+        ax.text(onset - 0.7, 5.25, "new steel lot", color=QUIET, fontsize=8.5, ha="right")
+    last = df.iloc[-1]
+    if setpoint_kw is not None:
+        ax.plot([last.part, last.part + 2], [last.power_w / 1000, setpoint_kw], color=SAFE, lw=2)
+        ax.text(last.part + 2, setpoint_kw - 0.35, f"setpoint {setpoint_kw:.1f}", color=SAFE, fontsize=8.5, ha="right")
+    elif last.power_w / 1000 > 8.1:
+        ax.scatter([last.part], [last.power_w / 1000], s=40, color=WALL, zorder=5, edgecolor="white")
+        head = 100 * (9000 - last.power_w) / 9000
+        ax.annotate(f"now · {head:.0f}% from limit", xy=(last.part, last.power_w / 1000),
+                    xytext=(last.part - 0.6, 7.3), ha="right", fontsize=8.5, color=WALL, fontweight="bold",
+                    arrowprops=dict(arrowstyle="-", color=WALL, lw=0.8))
     ax.set_ylim(5.0, 9.6)
     ax.set_xlim(df.part.min() - 0.5, max(df.part.max() + 3, 20))
     ax.set_xlabel("part number (4 min per part)")
     ax.set_ylabel("kW")
-    ax.set_title(title or "VM-07: spindle power and overstrain, part by part")
+    if title:
+        ax.set_title(title)
     return fig
 
 
@@ -71,8 +76,9 @@ def envelope(state: dict, lc: dict | None, parts_ahead: int = 30) -> plt.Figure:
     ax.fill_between(rpm, 30, np.minimum(t_hi, osf_win), where=rpm >= M.HDF_RPM, color=SAFE, alpha=0.08)
     ax.plot(rpm, t_hi, color=WALL, lw=1.6)
     ax.text(1690, 9000 / (1690 * 2 * math.pi / 60) - 2.2, "power ceiling 9 kW", color=WALL, fontsize=8.5, ha="right")
-    ax.axhline(osf_now, color=WALL, lw=1.0, ls=":", alpha=0.6)
-    ax.text(1690, osf_now + 0.4, f"overstrain now ({osf_now:.0f} Nm)", color=WALL, fontsize=8.5, ha="right", alpha=0.8)
+    if osf_now < 66:  # only draw it when it is on the chart; off-chart labels stretch the figure
+        ax.axhline(osf_now, color=WALL, lw=1.0, ls=":", alpha=0.6)
+        ax.text(1690, osf_now + 0.4, f"overstrain now ({osf_now:.0f} Nm)", color=WALL, fontsize=8.5, ha="right")
     ax.axhline(osf_win, color=WALL, lw=1.6)
     ax.text(1690, osf_win - 1.3, f"overstrain at shift change ({osf_win:.0f} Nm)", color=WALL, fontsize=8.5, ha="right")
     if state.get("d_temp", 10) < M.HDF_DT_K:
@@ -88,8 +94,8 @@ def envelope(state: dict, lc: dict | None, parts_ahead: int = 30) -> plt.Figure:
         t_end = lc["torque"] + state["creep"] * parts_ahead
         ax.plot([lc["rpm"], lc["rpm"]], [lc["torque"], t_end], color=SAFE, lw=1.4, ls="--")
         ax.scatter([lc["rpm"]], [t_end], s=30, color=SAFE, zorder=6)
-        ax.text(lc["rpm"] - 8, t_end + 0.6, f"at shift change: {t_end:.0f} Nm,\ninside both walls", color=SAFE,
-                fontsize=8.5, ha="right")
+        ax.text(lc["rpm"] + 8, t_end - 0.4, f"at shift change: {t_end:.0f} Nm, inside both walls", color=SAFE,
+                fontsize=8.5, ha="left", va="top")
         ax.scatter([lc["rpm"]], [lc["torque"]], s=80, color=SAFE, zorder=6, marker="D")
         ax.annotate("", xy=(lc["rpm"], lc["torque"]), xytext=(state["rpm"], state["torque"]),
                     arrowprops=dict(arrowstyle="->", color=SAFE, lw=1.8))
@@ -99,7 +105,7 @@ def envelope(state: dict, lc: dict | None, parts_ahead: int = 30) -> plt.Figure:
     ax.set_ylim(30, 68)
     ax.set_xlabel("spindle speed (rpm)")
     ax.set_ylabel("torque (Nm)")
-    ax.set_title("Safe operating envelope: the walls close in as the tool wears")
+    fig.subplots_adjust(top=0.96)
     return fig
 
 
@@ -225,4 +231,28 @@ def futures_chart(slots: list[dict], crew_value: float) -> plt.Figure:
     ax.set_xlabel("failures turned into planned repairs, USD per tower-year")
     ax.set_title("Sensor Futures: what to put on the next tower")
     fig.subplots_adjust(left=0.42)
+    return fig
+
+
+# ------------------------------------------------------------------ v0.2: product vs peers
+def peer_compare(signals: list[dict]) -> plt.Figure:
+    """One row per signal: the peers' range (bar), their median (tick) and this product (dot), on a shared
+    'z vs peers' scale so different units sit on one chart."""
+    fig, ax = _fig(7.2, 0.62 * len(signals) + 0.9)
+    fig.subplots_adjust(left=0.30, right=0.95, top=0.92, bottom=0.22)
+    for i, s in enumerate(signals):
+        y = len(signals) - 1 - i
+        ax.barh(y, 4, left=-2, height=0.36, color=GRID, zorder=1)
+        ax.plot([0, 0], [y - 0.24, y + 0.24], color=QUIET, lw=1.4, zorder=2)
+        z = max(min(s["z"], 7.5), -2.5)
+        color = WALL if s["z"] > 3 else WARN if s["z"] >= 2 else SAFE
+        ax.scatter([z], [y], s=70, color=color, zorder=3, edgecolor="white")
+        ax.text(z + 0.25, y + 0.18, f"{s['value']:g} (peers {s['peer_median']:g})", fontsize=8.5, color=INK)
+    ax.axvline(2, color=WARN, lw=1, ls=":")
+    ax.axvline(3, color=WALL, lw=1, ls="--")
+    ax.set_yticks(range(len(signals)))
+    ax.set_yticklabels([s["label"] for s in reversed(signals)])
+    ax.set_xlim(-2.5, 8)
+    ax.set_xlabel("deviation vs peers (robust z, worse to the right) · grey = peers' typical range")
+    ax.grid(axis="y", visible=False)
     return fig

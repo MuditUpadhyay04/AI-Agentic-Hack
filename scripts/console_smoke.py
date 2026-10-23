@@ -15,16 +15,28 @@ import sys
 
 import websockets
 
-PLOTS = ["mill_signals", "mill_envelope", "fleet_map", "tower_chart", "tower_options_plot", "tower_energy_plot",
+PLOTS = ["prev_chart", "mill_signals", "mill_envelope", "fleet_map", "tower_chart", "tower_options_plot", "tower_energy_plot",
          "kaizen_lots", "kaizen_futures"]
-UIS = ["mill_status", "mill_transcript", "mill_approval", "tower_transcript", "tower_option_cards", "tower_approval",
+UIS = ["mill_status", "mill_transcript", "mill_approval", "mill_incident", "mill_stats", "mill_wo", "mill_health",
+       "plant_chip", "crew_list", "alert_badge", "alert_stats", "queue_badge", "cure_badge", "queue_chip", "queue_stats", "queue_table", "queue_detail", "queue_log", "prev_head", "prev_lifelines", "prev_fleet", "cure_list", "hub_table", "order_card_ui", "fab_cards", "alert_list", "alert_detail", "tower_transcript", "tower_option_cards", "tower_approval",
        "kaizen_tiles", "kaizen_rules", "kaizen_transcript", "kaizen_dcr", "grow_passport", "grow_transcript",
        "slot_buttons"]
 
 STEPS = [
-    ("mill_change", {"mill_change": 1}, ["mill_status", "mill_signals"]),
+    ("mill_change", {"mill_change": 1}, ["mill_status", "mill_signals", "mill_incident", "alert_list"]),
+    ("alert_escalate", {"alert_escalate": 1}, ["alert_detail", "alert_stats"]),
+    ("alert_ack", {"alert_ack": 1}, ["alert_detail", "alert_badge"]),
     ("mill_assess", {"mill_assess": 1}, ["mill_transcript", "mill_approval", "mill_envelope"]),
-    ("mill_approve", {"mill_approve": 1}, ["mill_transcript", "mill_approval"]),
+    ("mill_pick_stop", {"mill_pick": "stop_now"}, ["mill_approval", "mill_envelope"]),
+    ("mill_pick_lc", {"mill_pick": "lift_and_coast"}, ["mill_approval"]),
+    ("mill_approve", {"mill_approve": 1}, ["mill_transcript", "mill_wo", "mill_incident", "mill_stats"]),
+    ("mill_revert", {"mill_revert": 1}, ["mill_transcript", "mill_approval"]),
+    ("ev_prev", {"ev_prev": 1}, ["queue_table", "queue_log", "prev_head", "prev_chart", "hub_table"]),
+    ("ev_cure", {"ev_cure": 1}, ["queue_table", "cure_list", "alert_list", "order_card_ui"]),
+    ("ev_fab", {"ev_fab": 1}, ["fab_cards", "queue_log"]),
+    ("src_motor", {"src_part": "DRIVE-MOTOR-SD"}, ["order_card_ui"]),
+    ("po_cheapest", {"po_cheapest": 1}, ["order_card_ui", "hub_table", "queue_log"]),
+    ("queue_sel", {"queue_sel": "JOB-1042"}, ["queue_detail"]),
     ("tower_assess", {"tower_assess": 1}, ["tower_transcript", "tower_approval"]),
     ("tower_approve", {"tower_approve": 1}, ["tower_transcript", "tower_approval"]),
     ("kaizen_run", {"kaizen_run": 1}, ["kaizen_transcript", "kaizen_dcr", "kaizen_rules"]),
@@ -40,7 +52,7 @@ async def run(port: int) -> int:
             ".clientdata_url_port": str(port), ".clientdata_url_pathname": "/", ".clientdata_url_search": "",
             ".clientdata_url_hash_initial": "", ".clientdata_url_hash": "", ".clientdata_pixelratio": 1,
             ".clientdata_singletons": "", ".clientdata_allowDataUriScheme": True,
-            "tower_id": "7", "manual": "lathe_l2_manual.md"}
+            "tower_id": "7", "manual": "lathe_l2_manual.md", "prev_product": "T-07", "src_part": "SEAL-KIT-SD", "src_hub": "NORTH"}
     for p in PLOTS:
         init[f".clientdata_output_{p}_width"] = 760
         init[f".clientdata_output_{p}_height"] = 300
@@ -69,12 +81,12 @@ async def run(port: int) -> int:
                 for k, v in (msg.get("errors") or {}).items():
                     errors[k] = v
 
-        await drain(25)
+        await drain(15)
         print(f"initial outputs: {sorted(seen)}")
         for name, data, want in STEPS:
             await ws.send(json.dumps({"method": "update", "data": data}))
             before = set(seen)
-            await drain(20)
+            await drain(8)
             got = [w for w in want if w in seen]
             print(f"{name:>16}: outputs {got} {'(new: ' + ', '.join(sorted(set(seen) - before)) + ')' if set(seen) - before else ''}")
     if errors:

@@ -8,6 +8,7 @@ hosts the crew; the payload says which loop to run:
     {"action": "approve", "plan": {...}}         Execute after the foreman approves
     {"action": "improve"}                        Kaizen
     {"action": "grow", "manual": "lathe_l2_manual.md"}
+    {"action": "sourcing"}                       Sourcing agent: urgent parts on site, restock hubs, buy
 
 Set PITCREW_LLM=bedrock and PITCREW_MODEL_ID in the runtime's environment. Local test without AWS:
 ``PITCREW_LLM=offline python agentcore/agent.py`` then POST to http://localhost:8080/invocations.
@@ -49,6 +50,8 @@ def invoke(payload: dict, context=None):
         out = crew.execute(payload["plan"], payload.get("who", "Foreman"))
     elif action == "improve":
         out = crew.improve()
+    elif action == "sourcing":
+        out = crew.sourcing()
     elif action == "grow":
         out = crew.grow(payload.get("manual", "lathe_l2_manual.md"))
     else:

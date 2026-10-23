@@ -77,6 +77,19 @@ POLICY = {
 }
 
 
+# Who Comms tells, how, and when it escalates. Internal alerts send automatically; external mail waits for a person.
+ALERT_POLICY = {
+    "SEV-1": {"who": "On-shift operator + line supervisor", "channel": "Email + SMS", "sends": "Automatically",
+              "escalate": "5 min -> plant manager", "escalate_min": 5},
+    "SEV-2": {"who": "On-shift operator + maintenance lead", "channel": "Email", "sends": "Automatically",
+              "escalate": "10 min -> line supervisor (SMS)", "escalate_min": 10},
+    "SEV-3": {"who": "Maintenance lead", "channel": "Daily digest", "sends": "Automatically", "escalate": "-",
+              "escalate_min": None},
+    "External": {"who": "Suppliers, contractors", "channel": "Email", "sends": "Needs manager approval",
+                 "escalate": "-", "escalate_min": None},
+}
+
+
 def policy_check(action: str, **kw) -> dict:
     """The same rules AgentCore Policy enforces on Gateway tool calls (Cedar), in code for offline runs."""
     if action == "create_po":

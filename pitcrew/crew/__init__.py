@@ -56,6 +56,10 @@ class Crew:
                                                 "arrived. Assess it and plan the response.", "mill", self._model()),
                          lambda: offline.mill_plan(self.w))
 
+    def alert_mill(self) -> dict:
+        # Comms tells the floor as soon as the Sentinel's numbers change; the message uses tool numbers only.
+        return offline.mill_alert(self.w)
+
     def plan_tower(self, tid: int = 7) -> dict:
         from . import strands_crew as S
 

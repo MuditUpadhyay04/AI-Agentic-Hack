@@ -2,7 +2,9 @@
 
     shiny run app/app.py --port 8000          # then open the port (VS Code web: the Ports tab)
 
-Run -> Improve -> Grow, with the approval card between the crew and the machine.
+Run -> Improve -> Grow, with the approval card between the crew and the machine. The Run · Mill page is laid
+out like an asset page in a maintenance product: incident banner, stat strip, signals, the crew's activity
+log, the foreman's decision and the resulting work order. Alerts shows what the Comms agent sent the floor.
 """
 from __future__ import annotations
 
@@ -22,6 +24,9 @@ from shiny import App, reactive, render, ui  # noqa: E402
 from pitcrew import __version__, mill, viz  # noqa: E402
 from pitcrew.crew import Crew  # noqa: E402
 from pitcrew.decide import diagnose, energy_table  # noqa: E402
+from pitcrew.contracts import (BUFFER, FAB_MACHINES, HUBS, PLACEHOLDER, VENDORS, Plant, fab_forecast,  # noqa: E402
+                               lifelines, order_card)
+from pitcrew.ops import ALERT_POLICY, TODAY  # noqa: E402
 from pitcrew.passport import manuals  # noqa: E402
 from pitcrew.tower import Fleet  # noqa: E402
 from pitcrew.world import World  # noqa: E402
@@ -29,9 +34,95 @@ from pitcrew.world import World  # noqa: E402
 SHARED_FLEET = Fleet().run()  # deterministic; shared read-only by every session
 MILL_ROWS = mill.creep_scenario()
 MODE = os.environ.get("PITCREW_LLM", "offline")
-MODE_LABEL = {"offline": "Crew: offline (deterministic narration)", "bedrock":
-              f"Crew: Bedrock · {os.environ.get('PITCREW_MODEL_ID', 'default model')}",
+MODE_LABEL = {"offline": "Crew offline (deterministic narration)", "bedrock":
+              f"Crew on Bedrock · {os.environ.get('PITCREW_MODEL_ID', 'default model')}",
               "scripted": "Crew: Strands + scripted model"}.get(MODE, MODE)
+MIN_PER_PART = 4
+INCIDENT = "INC-212"
+FONTS = ("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Titillium+Web:ital,wght@"
+         "0,600;0,700;0,900;1,700;1,900&family=JetBrains+Mono:wght@400;500&display=swap")
+
+# Agent -> (driver-tag code, team colour) for the activity log and the sidebar.
+AGENTS = {"Sentinel": ("SEN", "#9A9DAA"), "Diagnostician": ("DIA", "#FFB800"), "Race Engineer": ("RAC", "#4D7CFE"),
+          "Comms": ("COM", "#8E5CF6"), "Quartermaster": ("QMS", "#00A651"), "Dispatcher": ("DSP", "#00A651"),
+          "Foreman": ("FMN", "#15151E"), "Kaizen": ("KZN", "#00A651"), "Onboarder": ("ONB", "#00A651"),
+          "Scheduler": ("SCH", "#4D7CFE"), "Fab Engineer": ("FAB", "#6B6E7B"), "Manager": ("MGR", "#15151E"),
+          "System": ("SYS", "#9A9DAA"), "Sourcing": ("SRC", "#00A651")}
+VERBS = {"Sentinel": "checked the limits", "Diagnostician": "added a finding", "Race Engineer": "proposed an action",
+         "Comms": "alerted the floor", "Quartermaster": "handled parts", "Dispatcher": "booked the work",
+         "Foreman": "decided", "Kaizen": "reviewed history", "Onboarder": "onboarded an asset", "System": "note",
+         "Sourcing": "worked the parts"}
+
+# Earlier alerts today, so the Alerts page reads like a working inbox (simulated plant).
+ALERT_HISTORY = [
+    {"id": "AL-H02", "ref": "PO-7709", "severity": "External", "to": ["Tooling Supply Co."],
+     "subject": "Request for quote: 10 x INSERT-CNMG-L, needed by Monday", "status": "needs approval",
+     "sent_at": None, "channel": "Email", "body": "Please confirm price and delivery for 10 carbide inserts, part "
+     "INSERT-CNMG-L, to the Austin plant by Monday.", "checks": ["Unit price", "Ship date", "Lot number on the slip"],
+     "escalate_after_min": None, "rule": ALERT_POLICY["External"]},
+    {"id": "AL-H01", "ref": "Tower 7", "severity": "SEV-3", "to": ["Field technician (DFW route)"],
+     "subject": "[SEV-3] Tower 7 drive friction up 33%. Re-grease on the Thursday route", "status": "acknowledged",
+     "sent_at": "10:05:12", "acked_at": "10:22:03", "acked_by": "Field technician", "channel": "Daily digest",
+     "body": "Tower 7 (lot B grease) needs 33% more energy per degree than a healthy drive. Parked at 180 deg until "
+     "the visit.", "checks": ["Bring GREASE-KIT-SD (reserved)", "Check the drive seals", "Record the failure mode"],
+     "escalate_after_min": None, "rule": ALERT_POLICY["SEV-3"]},
+]
+
+ICON = {
+    "assets": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+              'aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>',
+    "towers": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+              'aria-hidden="true"><path d="M12 3v18M7 21h10M5 8h14l-2 5H7z"/></svg>',
+    "alerts": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+              'aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>',
+    "improve": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+               'aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg>',
+    "grow": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+            'aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+    "why": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+           'aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>',
+    "arch": '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+            'aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>'
+            '<rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>',
+}
+CHECKER = ('<svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect width="13" height="13" fill="#fff"/>'
+           '<rect x="13" y="13" width="13" height="13" fill="#fff"/><rect x="13" width="13" height="13" fill="#15151E" '
+           'stroke="#fff"/><rect y="13" width="13" height="13" fill="#15151E" stroke="#fff"/></svg>')
+ICON["incidents"] = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+                     'aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 '
+                     '0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>')
+# Closed incidents from earlier today, so the list reads like a working plant (simulated).
+INCIDENT_HISTORY = [
+    {"id": "INC-209", "asset": "Tower 7", "summary": "Drive friction up 33% (lot B grease); parked at 180 deg until "
+     "the Thursday route", "severity": "SEV-3", "status": "MITIGATED", "opened": "10:04", "owner": "Race Engineer",
+     "linked": ["AL-H01", "WO-4102"], "page": "towers", "chain": [
+         ("10:04", "Sentinel", "Detect", "Friction alarm on Tower 7: +33% energy per degree"),
+         ("10:05", "Comms", "Notify", "SEV-3 email to the DFW field technician"),
+         ("10:05", "Diagnostician", "Analyze", "Grease breakdown, supplier lot B"),
+         ("10:06", "Race Engineer", "Plan", "Park & Price: park at 180 deg for $3 of energy"),
+         ("10:21", "Foreman", "Approve", "Approved: park until the visit"),
+         ("10:22", "Dispatcher", "Execute", "WO-4102 on the Thursday route, 6 towers batched")]},
+    {"id": "INC-207", "asset": "VM-03", "summary": "Coolant filter clogging; filter replaced", "severity": "SEV-3",
+     "status": "RESOLVED", "opened": "07:41", "owner": "Dispatcher", "linked": ["WO-4087"], "page": None, "chain": [
+         ("07:41", "Sentinel", "Detect", "Process temperature gap narrowing on VM-03"),
+         ("07:44", "Diagnostician", "Analyze", "Coolant flow low: filter clogging"),
+         ("08:02", "Foreman", "Approve", "Approved filter change at break"),
+         ("09:12", "Dispatcher", "Execute", "WO-4087 closed; failure mode recorded: clogging")]},
+]
+ICON["queue"] = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+                 'aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>')
+ICON["parts"] = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+                 'aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>')
+ICON["fab"] = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+               'aria-hidden="true"><path d="M3 21V10l6 4V10l6 4V6h6v15z"/></svg>')
+# None starts a new sidebar section with that label.
+NAV = [("queue", "Priority queue", "queue"), ("prevention", "Prevention", "improve"), ("cure", "Cure", "incidents"),
+       ("sourcing", "Parts & sourcing", "parts"), ("fab", "Internal fab", "fab"), ("alerts", "Alerts · SendGrid", "alerts"),
+       (None, "V0.1 · STRETCH", None),
+       ("mill", "VM-07 Lift & Coast", "assets"), ("towers", "Solar towers", "towers"),
+       ("improve", "Improve", "improve"), ("grow", "Onboard asset", "grow"), ("why", "Why (press release)", "why"),
+       ("arch", "Architecture", "arch")]
+TYPE_STYLE = {"cure": ("CURE", "flag red"), "prevention": ("PREV", "flag amber"), "maintenance": ("MAINT", "flag ink")}
 
 
 def new_world() -> World:
@@ -47,21 +138,40 @@ def md_inline(text: str) -> str:
     return "".join(f"<b>{p}</b>" if i % 2 else p for i, p in enumerate(parts))
 
 
-def transcript(turns: list[dict]):
+def tag(agent: str):
+    code, color = AGENTS.get(agent, (agent[:3].upper(), "#9A9DAA"))
+    return ui.span(ui.span(class_="bar", style=f"background:{color}"), ui.span(ui.span(code), class_="code"), class_="tag")
+
+
+def skew(text, cls: str):
+    return ui.span(ui.span(text), class_=f"skew {cls}")
+
+
+def clock(t: float | None) -> str:
+    return dt.datetime.fromtimestamp(t).strftime("%H:%M") if t else ""
+
+
+def transcript(turns: list[dict], idle: str = "The crew is idle."):
+    """The crew's activity log: driver tag, who did what, what they said, and the tool calls behind it."""
     if not turns:
-        return ui.p("The crew is idle.", class_="small-note")
-    out = []
+        return ui.p(idle, class_="idle")
+    items = []
     for t in turns:
         chips = []
         for x in t.get("tools", []):
-            args = ", ".join(f"{k}={v}" for k, v in (x.get("args") or {}).items() if k not in ("evidence", "parts"))
+            args = ", ".join(f"{k}={v}" for k, v in (x.get("args") or {}).items() if k not in ("evidence", "parts", "body"))
             body = json.dumps(x.get("result"), indent=1, default=str)
             chips.append(ui.tags.details(ui.tags.summary(ui.span(f"{x['tool']}({args})", class_="chip")),
                                          ui.tags.pre(body[:4000]), class_="tool"))
-        out.append(ui.div(ui.div(ui.span(t["agent"], class_="who"), ui.span(t.get("stage", ""), class_="stage")),
-                          ui.div(ui.HTML(md_inline(t["say"])), class_="say"), *chips,
-                          class_=f"turn {t.get('stage', '')}"))
-    return ui.div(*out)
+        when = clock(t["tools"][0]["t"]) if t.get("tools") else t.get("time", "")
+        evidence = ui.tags.details(ui.tags.summary(f"Evidence · {len(chips)} tool call{'s' if len(chips) != 1 else ''}"),
+                                   *chips) if chips else None
+        items.append(ui.tags.li(
+            ui.div(tag(t["agent"])),
+            ui.div(ui.div(ui.tags.b(t["agent"]), ui.span(t.get("verb") or VERBS.get(t["agent"], "")),
+                          ui.span(when, class_="t"), class_="top"),
+                   ui.div(ui.HTML(md_inline(t["say"])), class_="say"), evidence)))
+    return ui.tags.ol(*items, class_="act")
 
 
 def options_table(options: list[dict], rec_key: str, kind: str):
@@ -83,126 +193,354 @@ def tile(num: str, lbl: str):
     return ui.div(ui.div(num, class_="num"), ui.div(lbl, class_="lbl"), class_="tile")
 
 
+def stat(label: str, value: str, unit: str, sub: str, color: str, pct: float, warn: bool = False):
+    on = round(pct / 10)
+    segs = [ui.tags.i(style=f"background:{color}" if i < on else None) for i in range(10)]
+    return ui.div(ui.div(label, class_="l"),
+                  ui.div(ui.tags.b(value, class_="warn" if warn else None), ui.span(unit), class_="v"),
+                  ui.div(*segs, class_="segs"), ui.div(sub, class_="s"), class_="stat")
+
+
+def box(title: str, *body, note: str = "", right=None, pad: bool = False):
+    hd = ui.div(ui.h2(title), ui.span(note, class_="note") if note else None,
+                ui.span(right, class_="right") if right is not None else None, class_="hd")
+    return ui.div(hd, ui.div(*body, class_="bd") if pad else ui.div(*body), class_="box")
+
+
+def topbar(crumb: str, *extra):
+    return ui.div(ui.span(ui.HTML(crumb), class_="crumb"), *extra, ui.span(class_="grow"),
+                  skew(MODE_LABEL, "mode live" if MODE == "bedrock" else "mode off"), class_="topbar")
+
+
+def pagehead(kicker: str, title: str, sub: str):
+    return ui.div(ui.div(kicker, class_="kicker"), ui.h1(title), ui.div(sub, class_="sub"), class_="pagehead")
+
+
 # ------------------------------------------------------------------ layout
-def run_mill_panel():
+def sidebar():
+    links = []
+    badges = {"alerts": "alert_badge", "cure": "cure_badge", "queue": "queue_badge"}
+    for key, label, icon in NAV:
+        if key is None:
+            links.append(ui.div(label, class_="sec"))
+            continue
+        badge = ui.output_ui(badges[key], inline=True) if key in badges else None
+        links.append(ui.input_action_button(f"nav_{key}", ui.TagList(ui.span(class_="tick"), ui.HTML(ICON[icon]),
+                                                                       ui.span(label), badge),
+                                            class_="navlink" + (" active" if key == "queue" else "")))
+    return ui.tags.aside(
+        ui.div(ui.HTML(CHECKER), ui.div(ui.div("PITCREW", class_="word"), ui.div("Austin Plant", class_="plant")),
+               class_="logo"),
+        ui.tags.nav(*links, **{"aria-label": "Main"}),
+        ui.div("CREW", class_="sec"),
+        ui.output_ui("crew_list"),
+        ui.div(ui.span("FM", class_="av"), ui.div(ui.div("Foreman", style="font-weight:600;font-size:13px"),
+                                                  ui.div("Line 2 · Shift B", class_="plant")), class_="me"),
+        class_="side")
+
+
+# ------------------------------------------------------------------ v0.2 pages
+def source_note(text: str):
+    return ui.span(text, class_="srcnote")
+
+
+def queue_page():
     return ui.nav_panel(
-        "Run · Mill",
-        ui.layout_columns(
-            ui.div(
-                ui.card(ui.card_header("VM-07 live signals (AI4I walls)"), ui.output_plot("mill_signals", height="300px")),
-                ui.card(ui.card_header("Safe operating envelope"), ui.output_plot("mill_envelope", height="360px")),
-            ),
-            ui.div(
-                ui.card(ui.card_header("Demo"),
-                        ui.p("Start with a normal window, then change the sensor story.", class_="lead"),
-                        ui.div(ui.input_action_button("mill_change", "1 · Harder steel lot arrives", class_="btn-warning"),
-                               ui.input_action_button("mill_assess", "2 · Crew: assess and plan", class_="btn-primary"),
-                               ui.input_action_button("mill_reset", "Reset", class_="btn-outline-secondary"),
-                               class_="step-btns"),
-                        ui.output_ui("mill_status")),
-                ui.card(ui.card_header("Crew"), ui.output_ui("mill_transcript")),
-                ui.output_ui("mill_approval"),
-            ),
-            col_widths=[7, 5]))
+        "queue",
+        topbar("<b>Priority queue</b>", ui.output_ui("queue_chip", inline=True)),
+        ui.div(
+            pagehead("PREVENTION · CURE · MAINTENANCE", "Priority queue",
+                     "One list of jobs from all three loops. Cure first, then Prevention by deviation, then "
+                     "Maintenance by due date. Stock is allocated in this order, so a part is never promised twice."),
+            ui.output_ui("queue_stats"),
+            ui.div(ui.div(box("Jobs", ui.output_ui("queue_table"), right="click a job for details"),
+                          ui.output_ui("queue_detail"), class_="col-main"),
+                   ui.div(box("Activity", ui.output_ui("queue_log")), class_="col-side"), class_="row2"),
+            class_="page"))
 
 
-def run_tower_panel():
+def prevention_page():
     return ui.nav_panel(
-        "Run · Towers",
-        ui.layout_columns(
-            ui.div(
-                ui.card(ui.card_header("Fleet: 48 ST-1 towers, three DFW sites (simulated drive model)"),
-                        ui.output_plot("fleet_map", height="300px")),
-                ui.card(ui.card_header("Selected tower"), ui.output_plot("tower_chart", height="300px")),
-                ui.output_ui("tower_option_cards"),
-            ),
-            ui.div(
-                ui.card(ui.card_header("Demo"),
-                        ui.input_select("tower_id", "Tower", choices={"7": "Tower 7 · grease, supplier lot B",
-                                                                       "19": "Tower 19 · seal leak",
-                                                                       "31": "Tower 31 · backlash",
-                                                                       "42": "Tower 42 · bearing (needs a future sensor)"}),
-                        ui.div(ui.input_action_button("tower_assess", "Crew: assess and price options",
-                                                      class_="btn-primary"), class_="step-btns"),
-                        ui.p("Park & Price: keep tracking, coast, park at the best azimuth or send a technician "
-                             "tomorrow - each priced with the field energy model and a weather "
-                             "Monte Carlo of the drive.", class_="small-note")),
-                ui.card(ui.card_header("Crew"), ui.output_ui("tower_transcript")),
-                ui.output_ui("tower_approval"),
-            ),
-            col_widths=[7, 5]))
+        "prevention",
+        topbar("Fleet / <b>Prevention</b>"),
+        ui.div(
+            pagehead("PRODUCT A VS ITS PEERS · MATTHEW", "Prevention",
+                     "A product that behaves differently from its peers is wearing faster than its lifeline assumes. "
+                     "The more different it is (D), the sooner it is visited."),
+            ui.div(ui.input_select("prev_product", None, choices={k: v["name"] for k, v in Plant().products.items()},
+                                   selected="T-07"), ui.output_ui("prev_head", inline=True),
+                   class_="pickrow"),
+            ui.div(ui.div(box("Signals vs peers", ui.output_plot("prev_chart", height="290px"),
+                              note="same model, same site, similar age"),
+                          class_="col-main"),
+                   ui.div(box("Lifelines", ui.output_ui("prev_lifelines"), note="maintenance pipeline", pad=True),
+                          class_="col-side"), class_="row2"),
+            box("Fleet", ui.output_ui("prev_fleet"), right="D < 2 normal · 2–3 watch · > 3 act"),
+            class_="page"))
 
 
-def improve_panel():
+def cure_page():
     return ui.nav_panel(
-        "Improve",
-        ui.layout_columns(
-            ui.div(
-                ui.card(ui.card_header("Kaizen"),
-                        ui.input_action_button("kaizen_run", "Run the Kaizen agent", class_="btn-primary"),
-                        ui.output_ui("kaizen_tiles")),
-                ui.card(ui.card_header("Rules found in AI4I vs the published walls"), ui.output_ui("kaizen_rules")),
-                ui.card(ui.card_header("Failure rate by supplier lot"), ui.output_plot("kaizen_lots", height="280px")),
-                ui.card(ui.card_header("Sensor Futures"), ui.output_plot("kaizen_futures", height="290px")),
-            ),
-            ui.div(
-                ui.card(ui.card_header("Crew"), ui.output_ui("kaizen_transcript")),
-                ui.card(ui.card_header("Design-change request for ST-2 (draft)"), ui.output_ui("kaizen_dcr")),
-            ),
-            col_widths=[7, 5]))
+        "cure",
+        topbar("Fleet / <b>Cure</b>"),
+        ui.div(
+            pagehead("PRODUCT IS DOWN · MUDIT", "Cure",
+                     "An error code that means down goes to the top of the queue: the part is pulled from the nearest "
+                     "hub and the site lead and technician are emailed through SendGrid."),
+            ui.output_ui("cure_list"),
+            class_="page"))
 
 
-def grow_panel():
+def sourcing_page():
     return ui.nav_panel(
-        "Grow",
-        ui.layout_columns(
-            ui.div(
-                ui.card(ui.card_header("Onboard a machine from its manual"),
-                        ui.input_select("manual", "Manual", choices=manuals(), selected="lathe_l2_manual.md"),
-                        ui.div(ui.input_action_button("grow_read", "Onboarder: read it", class_="btn-primary"),
-                               ui.input_action_button("grow_sign", "Sign the passport", class_="btn-success"),
-                               class_="step-btns"),
-                        ui.output_ui("grow_passport")),
-            ),
-            ui.div(
-                ui.card(ui.card_header("Crew"), ui.output_ui("grow_transcript")),
-                ui.card(ui.card_header("Future hardware slots"),
-                        ui.p("Signals the manual lists as not fitted become slots: the agents that need them already "
-                             "exist and switch on the day the sensor is installed. Try it on the solar tower: "
-                             "install the acoustic-emission slot, then look at Tower 42 on the Towers tab.",
-                             class_="small-note"),
-                        ui.output_ui("slot_buttons")),
-            ),
-            col_widths=[7, 5]))
+        "sourcing",
+        topbar("Supply chain / <b>Parts & sourcing</b>"),
+        ui.div(
+            pagehead("CENTRAL HUB · LOCAL HUBS · AUTHORIZED VENDORS · MUDIT", "Parts & sourcing",
+                     f"For every part at every hub: enough for the jobs coming up plus {BUFFER} spare for emergencies? "
+                     "If not, when to order and from whom: the cheapest vendor that arrives in time vs the fastest."),
+            box("Sourcing agent", ui.div(
+                ui.div(ui.input_action_button("src_run", "Sourcing agent: work the queue", class_="btn-approve"),
+                       ui.span("local hub → central hub → another local hub → buy · verified vendors only",
+                               class_="small-note"), style="display:flex;gap:12px;align-items:center;padding:12px 16px"),
+                ui.output_ui("src_agent")), right="pitcrew/sourcing.py"),
+            box("Stock vs upcoming demand", ui.output_ui("hub_table"), right="30-day horizon"),
+            ui.div(ui.input_select("src_part", None, choices={p: p for p in VENDORS}, selected="SEAL-KIT-SD"),
+                   ui.input_select("src_hub", None, choices={k: v["name"] for k, v in HUBS.items()}, selected="NORTH"),
+                   class_="pickrow"),
+            ui.output_ui("order_card_ui"),
+            class_="page"))
 
 
-def story_panel():
+def fab_page():
+    return ui.nav_panel(
+        "fab",
+        topbar("Supply chain / <b>Internal fab</b>"),
+        ui.div(
+            pagehead("FACTORY MACHINES · HARI", "Internal fab",
+                     "Machine health from the downtime model, and what it does to the parts we make in-house. When a "
+                     "machine degrades, in-house lead time grows and Sourcing switches to an outside vendor."),
+            ui.output_ui("fab_cards"),
+            class_="page"))
+
+
+def demo_bar():
+    return ui.div(ui.tags.b("Demo"),
+                  ui.input_action_button("ev_prev", "1 · Tower 7 drifts from peers"),
+                  ui.input_action_button("ev_cure", "2 · Tower 19 throws E-STALL"),
+                  ui.input_action_button("ev_fab", "3 · Makino L3 hydraulic drop"),
+                  ui.input_action_button("ev_reset", "Reset"),
+                  class_="democtl demofloat")
+
+
+def mill_page():
+    return ui.nav_panel(
+        "mill",
+        topbar("Assets / Line 2 / <b>VM-07</b>", ui.output_ui("plant_chip", inline=True)),
+        ui.div(
+            ui.div(ui.div(ui.div("LINE 2 · CNC VERTICAL MILL · VARIANT L", class_="kicker"),
+                          ui.div(ui.h1("VM-07"), ui.output_ui("mill_health", inline=True),
+                                 style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:2px"),
+                          ui.div("Insert CNMG, 120 min in use · walls from the AI4I 2020 failure rules (UCI 601)",
+                                 class_="sub"), style="flex:1 1 360px;min-width:0"),
+                   ui.div(ui.tags.button("Open manual", class_="btn-quiet", type="button"),
+                          ui.tags.button("New work order", class_="btn-quiet", type="button"),
+                          style="display:flex;gap:8px"), class_="asset-h"),
+            ui.div(ui.span("Overview", class_="on"), ui.span("Signals"), ui.span("Work orders"), ui.span("Passport"),
+                   class_="tabs"),
+            ui.output_ui("mill_incident"),
+            ui.output_ui("mill_stats"),
+            ui.div(
+                ui.div(box("Spindle power", ui.output_plot("mill_signals", height="270px"),
+                           note="kW · one point per part · warn band above 8.1"),
+                       box("Operating envelope", ui.output_plot("mill_envelope", height="330px"),
+                           note="torque vs speed · the walls close in as the tool wears"),
+                       class_="col-main"),
+                ui.div(box("Activity", ui.output_ui("mill_transcript"), right=INCIDENT), class_="col-side"),
+                class_="row2"),
+            ui.output_ui("mill_approval"),
+            ui.output_ui("mill_wo"),
+            ui.div(ui.tags.b("Demo controls"),
+                   ui.input_action_button("mill_change", "1 · Harder steel lot arrives"),
+                   ui.input_action_button("mill_assess", "2 · Crew: assess and plan"),
+                   ui.input_action_button("mill_reset", "Reset to normal window"),
+                   ui.output_ui("mill_status", inline=True), class_="democtl"),
+            class_="page"))
+
+
+def towers_page():
+    return ui.nav_panel(
+        "towers",
+        topbar("Assets / <b>ST-1 tower fleet</b>"),
+        ui.div(
+            pagehead("48 ST-1 TOWERS · THREE DFW SITES · SIMULATED DRIVE MODEL", "Solar towers",
+                     "Park & Price: the same crew on a different machine, priced with the field energy model."),
+            ui.layout_columns(
+                ui.div(
+                    ui.card(ui.card_header("Fleet"), ui.output_plot("fleet_map", height="300px")),
+                    ui.card(ui.card_header("Selected tower"), ui.output_plot("tower_chart", height="300px")),
+                    ui.output_ui("tower_option_cards"),
+                ),
+                ui.div(
+                    ui.card(ui.card_header("Demo"),
+                            ui.input_select("tower_id", "Tower", choices={"7": "Tower 7 · grease, supplier lot B",
+                                                                           "19": "Tower 19 · seal leak",
+                                                                           "31": "Tower 31 · backlash",
+                                                                           "42": "Tower 42 · bearing (needs a future sensor)"}),
+                            ui.div(ui.input_action_button("tower_assess", "Crew: assess and price options",
+                                                          class_="btn-primary"), class_="step-btns"),
+                            ui.p("Keep tracking, coast, park at the best azimuth or send a technician tomorrow - each "
+                                 "priced with the energy model and a weather Monte Carlo of the drive.",
+                                 class_="small-note")),
+                    ui.card(ui.card_header("Activity"), ui.output_ui("tower_transcript")),
+                    ui.output_ui("tower_approval"),
+                ),
+                col_widths=[7, 5]),
+            class_="page"))
+
+
+def incidents_page():
+    return ui.nav_panel(
+        "incidents",
+        topbar("<b>Incidents</b>"),
+        ui.div(
+            pagehead("PLANT-WIDE · TODAY", "Incidents",
+                     "Every incident the crew opened, who owns it, and the full chain from detection to the work "
+                     "order. Times come from the tool trace."),
+            ui.output_ui("incident_stats"),
+            box("Incidents", ui.output_ui("incident_table"), right="click a row for its chain"),
+            ui.output_ui("incident_detail"),
+            class_="page"))
+
+
+def alerts_page():
+    return ui.nav_panel(
+        "alerts",
+        topbar("<b>Alerts</b>"),
+        ui.div(
+            pagehead("COMMS AGENT · EMAIL AND SMS TO THE FLOOR", "Operator alerts",
+                     "When the crew opens an incident, Comms tells the right operator what to check, tracks the "
+                     "acknowledgment, and escalates if nobody answers. Email is simulated in this prototype."),
+            ui.output_ui("alert_stats"),
+            ui.div(
+                ui.div(box("Today", ui.output_ui("alert_list")), class_="col-side"),
+                ui.div(ui.output_ui("alert_detail"), class_="col-main"),
+                class_="row2"),
+            box("Alert rules", ui.HTML(pd.DataFrame(
+                [(k, v["who"], v["channel"], v["sends"], v["escalate"]) for k, v in ALERT_POLICY.items()],
+                columns=["Severity", "Who", "Channel", "Sends", "Escalate if no ack"]).to_html(
+                    index=False, classes="opts", border=0)), right="set by the operations manager · Comms follows them",
+                pad=True),
+            class_="page"))
+
+
+def improve_page():
+    return ui.nav_panel(
+        "improve",
+        topbar("<b>Improve</b>"),
+        ui.div(
+            pagehead("KAIZEN · WEEKLY", "Improve", "Rules found in data, supplier lots, Sensor Futures and the next "
+                     "tower's design changes."),
+            ui.layout_columns(
+                ui.div(
+                    ui.card(ui.card_header("Kaizen"),
+                            ui.input_action_button("kaizen_run", "Run the Kaizen agent", class_="btn-primary"),
+                            ui.output_ui("kaizen_tiles")),
+                    ui.card(ui.card_header("Rules found in AI4I vs the published walls"), ui.output_ui("kaizen_rules")),
+                    ui.card(ui.card_header("Failure rate by supplier lot"), ui.output_plot("kaizen_lots", height="280px")),
+                    ui.card(ui.card_header("Sensor Futures"), ui.output_plot("kaizen_futures", height="290px")),
+                ),
+                ui.div(
+                    ui.card(ui.card_header("Activity"), ui.output_ui("kaizen_transcript")),
+                    ui.card(ui.card_header("Design-change request for ST-2 (draft)"), ui.output_ui("kaizen_dcr")),
+                ),
+                col_widths=[7, 5]),
+            class_="page"))
+
+
+def grow_page():
+    return ui.nav_panel(
+        "grow",
+        topbar("<b>Onboard asset</b>"),
+        ui.div(
+            pagehead("ONBOARDER · PER MACHINE", "Onboard an asset", "Manual -> passport with future hardware slots -> "
+                     "a human signs -> the agents start."),
+            ui.layout_columns(
+                ui.div(
+                    ui.card(ui.card_header("Onboard a machine from its manual"),
+                            ui.input_select("manual", "Manual", choices=manuals(), selected="lathe_l2_manual.md"),
+                            ui.div(ui.input_action_button("grow_read", "Onboarder: read it", class_="btn-primary"),
+                                   ui.input_action_button("grow_sign", "Sign the passport", class_="btn-success"),
+                                   class_="step-btns"),
+                            ui.output_ui("grow_passport")),
+                ),
+                ui.div(
+                    ui.card(ui.card_header("Activity"), ui.output_ui("grow_transcript")),
+                    ui.card(ui.card_header("Future hardware slots"),
+                            ui.p("Signals the manual lists as not fitted become slots: the agents that need them "
+                                 "already exist and switch on the day the sensor is installed. Try it on the solar "
+                                 "tower: install the acoustic-emission slot, then look at Tower 42.",
+                                 class_="small-note"),
+                            ui.output_ui("slot_buttons")),
+                ),
+                col_widths=[7, 5]),
+            class_="page"))
+
+
+def story_page():
     pr = (ROOT / "docs" / "PRFAQ.md").read_text()
-    return ui.nav_panel("Why (press release)", ui.card(ui.markdown(pr)))
+    return ui.nav_panel("why", topbar("<b>Why</b>"), ui.div(ui.card(ui.markdown(pr)), class_="page"))
 
 
-def arch_panel():
+def arch_page():
     svg = (ROOT / "docs" / "architecture.svg").read_text()
     table = pd.DataFrame([
         ("Agents", "Strands Agents SDK, Graph for Run (fixed order, repeatable), single agents for Improve/Grow"),
         ("Runtime", "Amazon Bedrock AgentCore Runtime (agentcore/agent.py)"),
         ("Tools", "AgentCore Gateway exposing the World tools as MCP; CMMS via OpenAPI (MaintainX pattern)"),
         ("Guardrails", "AgentCore Policy (Cedar): POs over $500 and every setpoint change need the foreman"),
+        ("Comms", "Alerts to the floor by policy (SEV-1/2/3); Amazon SES for email in AWS, simulated here"),
         ("Knowledge", "Bedrock Knowledge Base over manuals; AgentCore Memory for incidents; passports in S3"),
         ("Suppliers", "A2A: supplier agents on their own runtimes (agentcore/supplier_a2a.py)"),
         ("Energy", "Table exported from the two-wing field model (scripts/export_energy_table.py)"),
         ("Data", "AI4I 2020 (UCI 601); tower drive model anchored to DuraMAT tracker motor current, NASA IMS"),
     ], columns=["Piece", "On AWS"])
-    return ui.nav_panel("Architecture", ui.card(ui.HTML(svg)),
-                        ui.card(ui.HTML(table.to_html(index=False, classes="opts", border=0))))
+    return ui.nav_panel("arch", topbar(f"<b>Architecture</b> · v{__version__}"),
+                        ui.div(ui.card(ui.HTML(svg)),
+                               ui.card(ui.HTML(table.to_html(index=False, classes="opts", border=0))), class_="page"))
 
 
-app_ui = ui.page_navbar(
-    run_mill_panel(), run_tower_panel(), improve_panel(), grow_panel(), story_panel(), arch_panel(),
-    ui.nav_spacer(), ui.nav_control(ui.span(MODE_LABEL, class_="mode-badge")),
-    title=ui.span("PitCrew", ui.span(f"Run · Improve · Grow  v{__version__}", class_="brand-sub")),
-    header=ui.include_css(ROOT / "app" / "www" / "styles.css"),
-    window_title="PitCrew",
+NAV_JS = """
+$(document).on('click', '.side .navlink', function () {
+  $('.side .navlink').removeClass('active'); $(this).addClass('active');
+});
+$(document).on('change', 'input[name=mill_pick]', function () {
+  Shiny.setInputValue('mill_pick', this.value, {priority: 'event'});
+});
+$(document).on('click', '.alist button', function () {
+  Shiny.setInputValue('alert_sel', $(this).data('id'), {priority: 'event'});
+});
+$(document).on('click', 'tr.q-row', function () {
+  Shiny.setInputValue('queue_sel', $(this).data('id'), {priority: 'event'});
+});
+$(document).on('click', 'tr.inc-row', function () {
+  Shiny.setInputValue('incident_sel', $(this).data('id'), {priority: 'event'});
+});
+$(document).on('click', '.goto', function () {
+  var k = $(this).data('page'); $('#nav_' + k).trigger('click');
+});
+"""
+
+app_ui = ui.page_fluid(
+    ui.head_content(ui.tags.link(rel="stylesheet", href=FONTS), ui.tags.title("PitCrew"),
+                    ui.include_css(ROOT / "app" / "www" / "styles.css"), ui.tags.script(NAV_JS)),
+    ui.div(sidebar(),
+           ui.tags.main(ui.div(class_="redline"),
+                        ui.navset_hidden(queue_page(), prevention_page(), cure_page(), sourcing_page(), fab_page(),
+                                         alerts_page(), mill_page(), towers_page(), improve_page(), grow_page(),
+                                         story_page(), arch_page(), id="page"),
+                        class_="mainpane"),
+           demo_bar(), class_="shell"),
 )
 
 
@@ -210,53 +548,674 @@ app_ui = ui.page_navbar(
 def server(input, output, session):
     w = new_world()
     crew = Crew(w, MODE)
-    mill_step = reactive.value(0)  # 0 normal, 1 changed, 2 planned, 3 approved
+    mill_step = reactive.value(0)  # 0 normal, 1 changed, 2 planned, 3 approved, 4 rejected
     mill_plan = reactive.value(None)
     mill_exec = reactive.value(None)
+    mill_comms = reactive.value(None)
+    mill_extra = reactive.value([])  # foreman turns the console records itself (reject, revert)
+    mill_t0 = reactive.value(None)  # when the sensor story changed
+    pick = reactive.value(None)
+    alerts_rev = reactive.value(0)
+    alert_sel = reactive.value(None)
+    incident_sel = reactive.value(None)
     tower_plan = reactive.value(None)
     tower_exec = reactive.value(None)
     kaizen = reactive.value(None)
     grow = reactive.value({"turns": [], "passport": None})
     slots_rev = reactive.value(0)  # bumps when a future hardware slot is installed
 
-    # ---------------- mill
+    # ---------------- navigation
+    for key, _, _ in NAV:
+        if key is None:
+            continue
+
+        def _bind(k=key):
+            @reactive.effect
+            @reactive.event(input[f"nav_{k}"])
+            def _():
+                ui.update_navset("page", selected=k)
+        _bind()
+
+    # ================================================================ v0.2: queue, prevention, cure, sourcing, fab
+    plant = Plant()
+    plant_rev = reactive.value(0)
+    plant_log = reactive.value([])
+    queue_sel = reactive.value(None)
+
+    def bump():
+        plant_rev.set(plant_rev() + 1)
+        alerts_rev.set(alerts_rev() + 1)
+
+    def log(agent: str, verb: str, say: str, tool: str | None = None, args: dict | None = None, result=None):
+        """Add a crew turn; the numbers in it come from the contract call recorded as its tool."""
+        tools = []
+        if tool:
+            w.agent = agent
+            w._rec(tool, args or {}, result)
+            tools = w.trace[-1:]
+        plant_log.set(plant_log() + [{"agent": agent, "verb": verb, "say": say, "tools": tools,
+                                      "time": dt.datetime.now().strftime("%H:%M")}])
+
+    def pq() -> dict:
+        plant_rev()
+        return plant.queue()
+
+    def job_for(product: str) -> dict | None:
+        return next((j for j in plant.queue()["jobs"] if j["product"] == product), None)
+
+    def alert_now(agent_verb: str, ref: str, sev: str, to: list, subject: str, body: str, checks: list):
+        n0 = len(w.trace)
+        w.agent = "Comms"
+        a = w.send_alert(ref, sev, to, subject, body, checks)
+        plant_log.set(plant_log() + [{"agent": "Comms", "verb": agent_verb, "tools": w.trace[n0:],
+                                      "say": f"{sev} email via SendGrid to {', '.join(to)}: \"{subject}\". "
+                                             + (f"Escalates after {a['escalate_after_min']} min without an ack."
+                                                if a["escalate_after_min"] else "")}])
+
     @reactive.effect
-    @reactive.event(input.mill_reset)
+    @reactive.event(input.ev_prev)
     def _():
+        if "prevention:T-07" in plant.events:
+            return
+        plant.tower7_drifts()
+        p = plant.prevention()["T-07"]
+        log("Sentinel", "compared Tower 7 with its peers",
+            f"Tower 7: D = {p['D']} against {p['peer_count']} peers; worst signal {p['worst_signal']}. Action: {p['action']}.",
+            "peer_deviation", {"product": "T-07"}, p)
+        j = job_for("T-07")
+        parts = "; ".join(f"{s['part']} {s['text']}" for s in j["parts_status"])
+        log("Scheduler", "re-ranked the queue",
+            f"{j['job_id']} for Tower 7 pulled forward from {j['was_due']:%b %d} to {j['due_by']:%b %d}, now rank "
+            f"{j['rank']}. {parts}.", "queue", {}, {k: v for k, v in j.items() if k != "rank_key"})
+        alert_now("told the site", "Tower 7", "SEV-3", ["Site lead, DFW warehouse roof"],
+                  f"[SEV-3] Tower 7 visit moved to {j['due_by']:%b %d}: drifting from its peers",
+                  f"Tower 7 is behaving differently from its {p['peer_count']} peers ({p['worst_signal']}, D = {p['D']}). "
+                  f"Its {j['component'].lower()} job moved from {j['was_due']:%b %d} to {j['due_by']:%b %d}.",
+                  ["Expect the technician on the new date", "Note any alarms on the tower controller"])
+        bump()
+
+    @reactive.effect
+    @reactive.event(input.ev_cure)
+    def _():
+        if "cure:T-19" in plant.events:
+            return
+        c = plant.tower19_stalls()
+        log("Sentinel", f"opened {c['id']}",
+            f"Tower 19 threw {c['code']} ({c['meaning']}): the product is down, about ${c['downtime_usd_per_h']:.0f}/h "
+            "of lost energy.", "error_code", {"product": "T-19"}, {k: v for k, v in c.items() if k != "opened"})
+        log("Diagnostician", "mapped the code",
+            f"{c['code']} → {c['component']}; parts: " + ", ".join(f"{p} × {q}" for p, q in c["parts"]) + ".",
+            "error_code_table", {"code": c["code"]}, {"component": c["component"], "parts": c["parts"]})
+        j = job_for("T-19")
+        log("Quartermaster", "pulled the part",
+            "; ".join(f"{s['part']} {s['text']}" for s in j["parts_status"]) + ".", "queue", {},
+            {k: v for k, v in j.items() if k != "rank_key"})
+        alert_now("emailed the site and technician", "Tower 19", "SEV-1",
+                  ["Site lead, DFW warehouse roof", "Technician, DFW route"],
+                  f"[SEV-1] Tower 19 is down ({c['code']}). Drive motor reserved at {HUBS[j['hub']]['name']}",
+                  f"Tower 19 stopped with {c['code']} ({c['meaning']}). Likely failed component: {c['component']}. "
+                  f"Priority job {j['job_id']} is at the top of the queue for today.",
+                  [f"Pick up DRIVE-MOTOR-SD at {HUBS[j['hub']]['name']}", "Lock out the drive before opening the housing",
+                   "Record the failure mode when closing the job"])
+        log("Dispatcher", "booked the priority job",
+            f"{j['job_id']} is rank {j['rank']}: technician rerouted to Tower 19 today.")
+        bump()
+
+    @reactive.effect
+    @reactive.event(input.ev_fab)
+    def _():
+        if "fab:MK-L3" in plant.events:
+            return
+        plant.fab_l3_degrades()
+        st = plant.fab_statuses()
+        s3 = st["MK-L3"]
+        prob = f"{100 * s3['failure_probability']:.0f}%" if s3["failure_probability"] is not None else "n/a"
+        log("Fab Engineer", "read the downtime model",
+            f"Makino L3: {s3['status']} (failure probability {prob}, {s3['source']}).", "fab_status",
+            {"machine": "MK-L3"}, s3)
+        fc = fab_forecast("DRIVE-MOTOR-SD", st)
+        log("Quartermaster", "re-checked in-house supply",
+            f"In-house DRIVE-MOTOR-SD now takes {fc['lead_time_days']} days ({fc['reason']}). The order card "
+            "re-picks the cheapest option that still arrives in time.", "fab_forecast", {"part": "DRIVE-MOTOR-SD"}, fc)
+        bump()
+
+    @reactive.effect
+    @reactive.event(input.ev_reset)
+    def _():
+        nonlocal plant
+        plant = Plant()
+        plant_log.set([])
+        queue_sel.set(None)
+        reset_mill()
+        bump()
+
+    @reactive.effect
+    @reactive.event(input.queue_sel)
+    def _():
+        queue_sel.set(input.queue_sel())
+
+    def place(which: str):
+        q = pq()
+        card = order_card(input.src_part(), input.src_hub(), plant, q["allocation"])
+        opt = card[which]
+        if not opt or card["order_qty"] <= 0:
+            return
+        po = plant.place_po(card["part"], card["hub"], opt, card["order_qty"])
+        who = "Quartermaster" if opt["landed_usd"] <= 500 else "Manager"
+        log(who, "placed an order",
+            f"{po['po']}: {po['qty']} × {po['part']} from {po['vendor']} for ${po['total_usd']:,.0f}, arrives "
+            f"{po['arrives']:%b %d} at {HUBS[po['hub']]['name']}. {po['status']}.", "place_po",
+            {"part": po["part"], "hub": po["hub"], "vendor": po["vendor"]}, po)
+        bump()
+
+    @reactive.effect
+    @reactive.event(input.po_cheapest)
+    def _():
+        place("cheapest")
+
+    @reactive.effect
+    @reactive.event(input.po_fastest)
+    def _():
+        place("fastest")
+
+    # ---------------- queue
+    @render.ui
+    def queue_badge():
+        n = len(pq()["jobs"])
+        return ui.span(str(n), class_="badge-n hot" if pq()["counts"]["cure"] else "badge-n")
+
+    @render.ui
+    def cure_badge():
+        n = pq()["counts"]["cure"]
+        return ui.span(str(n), class_="badge-n hot" if n else "badge-n")
+
+    @render.ui
+    def queue_chip():
+        c = pq()["counts"]
+        return ui.span(ui.span("QUEUE", class_="k"), ui.span(ui.tags.b(str(c["cure"])), " cure", class_="risk" if c["cure"] else None),
+                       ui.span(ui.tags.b(str(c["prevention"])), " prevention"),
+                       ui.span(ui.tags.b(str(c["maintenance"])), " maintenance"), class_="plantchip")
+
+    @render.ui
+    def queue_stats():
+        q = pq()
+        c = q["counts"]
+        states = [s["state"] for j in q["jobs"] for s in j["parts_status"]]
+        moving = sum(s in ("transfer", "on order") for s in states)
+        short = sum(s == "short" for s in states)
+        return ui.div(
+            stat("CURE", str(c["cure"]), "down now", "top of the queue" if c["cure"] else "no product down",
+                 "#E10600", 100 if c["cure"] else 0, warn=bool(c["cure"])),
+            stat("PREVENTION", str(c["prevention"]), "pulled forward", "D > 3 vs peers", "#FFB800",
+                 100 if c["prevention"] else 0),
+            stat("MAINTENANCE", str(c["maintenance"]), "scheduled", "lifelines due in 30 days", "#15151E",
+                 10 * c["maintenance"]),
+            stat("PARTS", f"{states.count('reserved')}/{len(states)}", "reserved",
+                 f"{moving} moving · {short} short", "#00A651" if not short else "#E10600",
+                 100 * states.count("reserved") / max(len(states), 1), warn=bool(short)),
+            class_="stats")
+
+    @render.ui
+    def queue_table():
+        q = pq()
+        sel = queue_sel() or (q["jobs"][0]["job_id"] if q["jobs"] else None)
+        state_cls = {"reserved": "ack", "transfer": "wait", "on order": "appr", "short": "esc"}
+        rows = []
+        for j in q["jobs"]:
+            label, cls = TYPE_STYLE[j["type"]]
+            due = [f"{j['due_by']:%b %d}"]
+            if j.get("was_due"):
+                due = [ui.span(f"{j['was_due']:%b %d}", class_="was"), " ", ui.span(f"{j['due_by']:%b %d}", class_="now")]
+            parts = [ui.div(ui.span(s["state"].upper(), class_=f"st {state_cls[s['state']]}"), " ", s["part"])
+                     for s in j["parts_status"]]
+            rows.append(ui.tags.tr(
+                ui.tags.td(ui.tags.b(str(j["rank"]))), ui.tags.td(ui.span(label, class_=f"{cls} qflag")),
+                ui.tags.td(ui.tags.b(j["product_name"]), ui.div(j["site"], class_="small-note")),
+                ui.tags.td(j["component"]), ui.tags.td(*due), ui.tags.td(*parts),
+                ui.tags.td(HUBS[j["hub"]]["name"]), ui.tags.td(j["reason"], class_="small-note"),
+                class_="q-row" + (" sel" if j["job_id"] == sel else ""), **{"data-id": j["job_id"]}))
+        head = ["#", "Type", "Product", "Component", "Due", "Parts", "Hub", "Why here"]
+        return ui.div(ui.tags.table(ui.tags.thead(ui.tags.tr(*[ui.tags.th(h) for h in head])), ui.tags.tbody(*rows),
+                                    class_="opts inc"), style="overflow-x:auto;padding:4px 12px 8px")
+
+    @render.ui
+    def queue_detail():
+        q = pq()
+        sel = queue_sel() or (q["jobs"][0]["job_id"] if q["jobs"] else None)
+        j = next((x for x in q["jobs"] if x["job_id"] == sel), None)
+        if not j:
+            return ui.div()
+        label, cls = TYPE_STYLE[j["type"]]
+        go = {"cure": ("cure", "Open in Cure"), "prevention": ("prevention", "Open in Prevention"),
+              "maintenance": ("prevention", "Open lifelines")}[j["type"]]
+        rows = [("Product", f"{j['product_name']} · {j['site']}"), ("Component", j["component"]),
+                ("Due", f"{j['due_by']:%a %b %d}" + (f" (was {j['was_due']:%b %d})" if j.get("was_due") else "")),
+                ("Why", j["reason"])] + [(f"Part {s['part']}", s["text"]) for s in j["parts_status"]]
+        return ui.div(
+            ui.div(ui.div(label, class_=cls),
+                   ui.div(ui.span(j["job_id"], class_="m", style="font-family:'JetBrains Mono',monospace"),
+                          ui.h2(f"{j['product_name']}: {j['component']}"), ui.span(f"rank {j['rank']}", class_="m r"),
+                          class_="txt"), class_="bandhd"),
+            ui.div(*[ui.div(ui.div(k, class_="k"), ui.div(v, class_="v")) for k, v in rows], class_="wo-grid"),
+            ui.div(ui.tags.button(go[1], type="button", class_="btn-quiet goto", **{"data-page": go[0]}),
+                   ui.tags.button("Open Parts & sourcing", type="button", class_="btn-quiet goto",
+                                  **{"data-page": "sourcing"}), style="display:flex;gap:8px;padding:0 18px 16px"),
+            class_="proposal")
+
+    @render.ui
+    def queue_log():
+        return transcript(plant_log(), "Lifelines put 5 maintenance jobs in the queue. Press 1–3 in the demo bar.")
+
+    # ---------------- prevention
+    @render.ui
+    def prev_head():
+        plant_rev()
+        p = plant.prevention()[input.prev_product()]
+        cls = {"act": "health risk", "watch": "mode off", "normal": "health ok"}[p["action"]]
+        return ui.span(skew(f"D = {p['D']} · {p['action'].upper()}", cls),
+                       ui.span(f" worst: {p['worst_signal']} · {p['peer_count']} peers", class_="small-note"),
+                       source_note("placeholder until Matthew's AI4I model is plugged in"))
+
+    @render.plot(alt="Product signals against the peer range")
+    def prev_chart():
+        plant_rev()
+        return viz.peer_compare(plant.prevention()[input.prev_product()]["signals"])
+
+    @render.ui
+    def prev_lifelines():
+        q = pq()
+        pid = input.prev_product()
+        items = []
+        for c in lifelines(pid, plant):
+            job = next((j for j in q["jobs"] if j["product"] == pid and j["component"] == c["component"]), None)
+            pulled = job and job.get("was_due")
+            due = job["due_by"] if pulled else c["due_by"]
+            color = "#E10600" if c["used_pct"] >= 90 or pulled else "#FFB800" if c["used_pct"] >= 80 else "#00A651"
+            items.append(ui.div(
+                ui.div(ui.tags.b(c["component"]), ui.span(f"{c['used_pct']}% used", class_="small-note"),
+                       ui.span(f"due {due:%b %d}" + (f" (pulled from {c['due_by']:%b %d})" if pulled else ""),
+                               class_="t"), class_="top"),
+                ui.div(ui.div(style=f"width:{c['used_pct']}%;background:{color}"), class_="lifebar"), class_="life"))
+        return ui.div(*items, source_note("placeholder until the lifeline pipeline is plugged in")) if items else \
+            ui.p("No lifelines for this product.", class_="idle")
+
+    @render.ui
+    def prev_fleet():
+        plant_rev()
+        rows = []
+        for pid, p in sorted(plant.prevention().items(), key=lambda kv: -kv[1]["D"]):
+            pr = plant.products[pid]
+            cls = {"act": "esc", "watch": "wait", "normal": "ack"}[p["action"]]
+            rows.append(ui.tags.tr(ui.tags.td(ui.tags.b(pr["name"])), ui.tags.td(pr["site"]),
+                                   ui.tags.td(f"{p['D']:.1f}"), ui.tags.td(ui.span(p["action"].upper(), class_=f"st {cls}")),
+                                   ui.tags.td(p["worst_signal"])))
+        head = ["Product", "Site", "D", "Action", "Worst signal"]
+        return ui.div(ui.tags.table(ui.tags.thead(ui.tags.tr(*[ui.tags.th(h) for h in head])), ui.tags.tbody(*rows),
+                                    class_="opts"), style="overflow-x:auto;padding:4px 12px 8px")
+
+    # ---------------- cure
+    @render.ui
+    def cure_list():
+        q = pq()
+        alerts_rev()
+        if not plant.cures:
+            return box("Products down", ui.p("No product is down. Press 2 in the demo bar to have Tower 19 throw "
+                                             "E-STALL.", class_="idle"), pad=True)
+        out = []
+        for c in plant.cures:
+            j = next((x for x in q["jobs"] if x.get("incident") == c["id"]), {})
+            pr = plant.products[c["product"]]
+            a = next((x for x in w.alerts if x["ref"] == pr["name"]), None)
+            rows = [("Error code", f"{c['code']}: {c['meaning']}"), ("Likely component", c["component"]),
+                    ("Downtime cost", f"~${c['downtime_usd_per_h']:.0f}/h"),
+                    ("Priority job", f"{j.get('job_id', '')} · rank {j.get('rank', '')}"),
+                    *[(f"Part {s['part']}", s["text"]) for s in j.get("parts_status", [])],
+                    ("SendGrid email", f"{a['status']} · to {', '.join(a['to'])}" if a else "not sent")]
+            out.append(ui.div(
+                ui.div(ui.div("CURE", class_="flag red"),
+                       ui.div(ui.span(c["id"], class_="m", style="font-family:'JetBrains Mono',monospace"),
+                              ui.h2(f"{pr['name']} is down"), ui.span(f"opened {c['opened']:%H:%M} · {pr['site']}",
+                                                                       class_="m r"), class_="txt"), class_="bandhd"),
+                ui.div(*[ui.div(ui.div(k, class_="k"), ui.div(v, class_="v")) for k, v in rows], class_="wo-grid"),
+                ui.div(ui.tags.button("Open the email in Alerts", type="button", class_="btn-quiet goto",
+                                      **{"data-page": "alerts"}),
+                       source_note("error-code table and downtime cost are placeholders until Mudit's version lands"),
+                       style="display:flex;gap:12px;align-items:center;padding:0 18px 16px"),
+                class_="proposal"))
+        return ui.div(*out, style="display:flex;flex-direction:column;gap:20px")
+
+    # ---------------- sourcing
+    src_out = reactive.value(None)
+
+    @reactive.effect
+    @reactive.event(input.src_run)
+    def _():
+        with ui.Progress() as p:
+            p.set(message="Sourcing agent is working the queue...")
+            src_out.set(crew.sourcing())
+
+    @render.ui
+    def src_agent():
+        out = src_out()
+        if not out:
+            return ui.p("Press the button: the agent gets each urgent job's part on site, refills the local hubs, "
+                        "then prices refilling the central hub.", class_="idle", style="padding:0 16px 12px")
+        moves = [ui.tags.tr(ui.tags.td(m["from"]), ui.tags.td(m["to"]), ui.tags.td(m["pn"]), ui.tags.td(str(m["qty"])),
+                            ui.tags.td(m["why"])) for m in out.get("moves", [])]
+        pos = [ui.p(f"{p['po']} · {p['qty']} × {p['pn']} · {p['vendor']} · ${p['total_usd']:,.0f} · arrives "
+                    f"{p['arrives']} · {p['status']}", class_="approved") for p in out.get("pos", [])]
+        return ui.div(
+            ui.div(transcript(out["turns"]), style="padding:0 16px"),
+            ui.div(ui.tags.table(ui.tags.thead(ui.tags.tr(*[ui.tags.th(h) for h in ["From", "To", "Part", "Qty", "Why"]])),
+                                 ui.tags.tbody(*moves), class_="opts"), style="overflow-x:auto;padding:8px 16px")
+            if moves else None,
+            ui.div(*pos, style="padding:0 16px 12px"),
+            source_note(f"crew mode: {out.get('mode', MODE)} · numbers from pitcrew/sourcing.py tools"))
+
+    @render.ui
+    def hub_table():
+        q = pq()
+        rows = []
+        for hub in HUBS:
+            for part in VENDORS:
+                c = order_card(part, hub, plant, q["allocation"])
+                short = c["shortfall"] > 0
+                rows.append(ui.tags.tr(
+                    ui.tags.td(HUBS[hub]["name"]), ui.tags.td(part), ui.tags.td(str(c["on_hand"])),
+                    ui.tags.td(str(c["reserved"])), ui.tags.td(str(c["inbound"])),
+                    ui.tags.td(f"{c['scheduled']:g} + {c['predicted']:g} + {c['buffer']}"),
+                    ui.tags.td(ui.span(f"{c['shortfall']:g}" if short else "OK", class_="st esc" if short else "st ack")),
+                    ui.tags.td(f"{c['need_by']:%b %d}" if c["need_by"] else "—")))
+        head = ["Hub", "Part", "On hand", "Reserved", "Inbound", "Need (jobs + predicted + buffer)", "Short", "Need by"]
+        return ui.div(ui.tags.table(ui.tags.thead(ui.tags.tr(*[ui.tags.th(h) for h in head])), ui.tags.tbody(*rows),
+                                    class_="opts"),
+                      source_note("placeholder sourcing model (idea.md 7a) until Mudit's lands"),
+                      style="overflow-x:auto;padding:4px 12px 10px")
+
+    @render.ui
+    def order_card_ui():
+        q = pq()
+        c = order_card(input.src_part(), input.src_hub(), plant, q["allocation"])
+        hub = HUBS[c["hub"]]["name"]
+        if c["order_qty"] <= 0:
+            return box(f"Order card · {c['part']} at {hub}", ui.p(
+                f"Enough stock: position {c['position']} covers {c['need']:g} (jobs + predicted + {BUFFER} buffer). "
+                "No order needed.", class_="idle"), pad=True)
+
+        def opt_card(title: str, o: dict | None, key: str):
+            if not o:
+                return ui.div(ui.div(title, class_="l"), ui.p("No vendor arrives in time.", class_="idle"), class_="ocard")
+            ob = f"order by {o['order_by']:%b %d}" if o.get("order_by") else "start now"
+            return ui.div(ui.div(title, class_="l"), ui.div(o["vendor"], class_="vn"),
+                          ui.div(ui.tags.b(f"${o['landed_usd']:,.0f}"), ui.span(f" for {c['order_qty']}"), class_="v"),
+                          ui.div(f"arrives {o['arrives']:%b %d} · {o['lead_days']} days · {ob}", class_="s"),
+                          ui.div(o.get("reason", ""), class_="s") if o.get("reason") else None,
+                          ui.input_action_button(f"po_{key}", ("Order" if o["landed_usd"] <= 500 else "Approve and order")
+                                                 + f" · ${o['landed_usd']:,.0f}",
+                                                 class_="btn-approve" if key == "cheapest" else "btn-quiet"),
+                          class_="ocard")
+
+        late = [o["vendor"] + (f" (arrives {o['arrives']:%b %d})") for o in c["late"]]
+        rows = [ui.tags.tr(ui.tags.td(o["vendor"]), ui.tags.td(f"${o['unit_usd']:,.0f}"), ui.tags.td(f"{o['lead_days']} d"),
+                           ui.tags.td(f"{o['arrives']:%b %d}"),
+                           ui.tags.td(ui.span("in time" if o["in_time"] else "late", class_="st ack" if o["in_time"] else "st esc")),
+                           ui.tags.td(f"${o['landed_usd']:,.0f}")) for o in c["options"]]
+        pos = [p for p in plant.pos if p["part"] == c["part"] and p["hub"] == c["hub"]]
+        return ui.div(
+            ui.div(ui.div("ORDER", class_="flag amber"),
+                   ui.div(ui.span(c["part"], class_="m", style="font-family:'JetBrains Mono',monospace"),
+                          ui.h2(f"Order {c['order_qty']} for {hub}"),
+                          ui.span(f"need by {c['need_by']:%b %d}: {c['need_why']}", class_="m r"), class_="txt"),
+                   class_="bandhd"),
+            ui.div(opt_card("CHEAPEST IN TIME", c["cheapest"], "cheapest"), opt_card("FASTEST", c["fastest"], "fastest"),
+                   class_="ocards"),
+            ui.p(("Too late: " + "; ".join(late) + ". ") if late else "", f"Position {c['position']} (on hand "
+                 f"{c['on_hand']} + inbound {c['inbound']}) vs need {c['need']:g} = {c['scheduled']:g} jobs + "
+                 f"{c['predicted']:g} predicted + {BUFFER} buffer. Orders over $500 need a manager.",
+                 class_="why", style="padding:0 18px"),
+            ui.div(ui.tags.table(ui.tags.thead(ui.tags.tr(*[ui.tags.th(h) for h in
+                                                            ["Vendor", "Unit", "Lead", "Arrives", "", "Landed"]])),
+                                 ui.tags.tbody(*rows), class_="opts"), style="overflow-x:auto;padding:8px 18px"),
+            ui.div(*[ui.p(f"{p['po']} · {p['qty']} × {p['part']} · {p['vendor']} · ${p['total_usd']:,.0f} · arrives "
+                          f"{p['arrives']:%b %d} · {p['status']}", class_="approved") for p in pos],
+                   style="padding:0 18px 12px"),
+            class_="proposal")
+
+    # ---------------- internal fab
+    @render.ui
+    def fab_cards():
+        plant_rev()
+        st = plant.fab_statuses()
+        cards = []
+        for mid, m in FAB_MACHINES.items():
+            s = st[mid]
+            cls = {"NORMAL": "health ok", "CAUTION": "mode off", "FAILURE WARNING": "health risk"}.get(s["status"], "mode off")
+            prob = s["failure_probability"]
+            r = plant.fab_readings[mid]
+            fcs = [fab_forecast(part, st) for part in m["makes"]]
+            cards.append(ui.div(
+                ui.div(ui.div(m["line"].upper(), class_="l"), ui.h3(m["name"], style="margin:2px 0 6px"),
+                       skew(s["status"], cls), class_="fabhead"),
+                stat("FAILURE PROBABILITY", f"{100 * prob:.0f}%" if prob is not None else "n/a", "", s["source"],
+                     "#E10600" if (prob or 0) >= .7 else "#FFB800" if (prob or 0) >= .4 else "#00A651", 100 * (prob or 0),
+                     warn=(prob or 0) >= .7),
+                ui.div(ui.div(ui.div("Hydraulic pressure", class_="k"), ui.div(f"{r['Hydraulic_Pressure(bar)']:.0f} bar", class_="v")),
+                       ui.div(ui.div("Torque", class_="k"), ui.div(f"{r['Torque(Nm)']:.1f} Nm", class_="v")),
+                       *[ui.div(ui.div(f"Makes {f['part']}", class_="k"),
+                                ui.div(f"{f['lead_time_days']} days in-house", class_="v"),
+                                ui.div(f["reason"], class_="small-note")) for f in fcs],
+                       class_="wo-grid", style="padding:12px 16px"),
+                class_="box fabcard"))
+        return ui.div(ui.div(*cards, class_="fabgrid"),
+                      source_note("status: Hari's machine_downtime_model (real model) · in-house lead time: placeholder "
+                                  "until fab_forecast lands"))
+
+    def live_alerts() -> list[dict]:
+        alerts_rev()
+        return list(reversed(w.alerts)) + ALERT_HISTORY
+
+    @render.ui
+    def alert_badge():
+        n = sum(a["status"] in ("awaiting ack", "escalated", "needs approval") for a in live_alerts())
+        return ui.span(str(n), class_="badge-n hot" if n else "badge-n")
+
+    @render.ui
+    def crew_list():
+        alerts_rev()
+        s = mill_step()
+        waiting = any(a["status"] in ("awaiting ack", "escalated") for a in w.alerts)
+        busy = {"Sentinel": s == 1, "Race Engineer": s == 2, "Comms": waiting}
+        rows = [ui.div(tag(a), ui.span(a), ui.span(class_="dot busy" if busy.get(a) else "dot"), class_="crew-row")
+                for a in ["Sentinel", "Diagnostician", "Race Engineer", "Comms", "Quartermaster", "Dispatcher"]]
+        return ui.div(*rows, style="padding:8px 0")
+
+    # ---------------- mill: numbers the page shows, all from the same mill functions the tools use
+    def mill_numbers() -> dict:
+        s = mill_step()
+        st = dict(w.mill_state)
+        if s == 0:
+            st.update(torque=40.0, d_temp=10.2, creep=0.0)
+        kw = st["torque"] * mill.omega(st["rpm"]) / 1000
+        n, _ = mill.parts_until_wall(st["rpm"], st["torque"], st["wear"], st["d_temp"], st["creep"], st["variant"])
+        t0 = mill_t0() or dt.datetime.now()
+        return {"kw": kw, "parts": n, "rpm": st["rpm"], "torque": st["torque"], "wear": st["wear"],
+                "limit_at": (t0 + dt.timedelta(minutes=MIN_PER_PART * n)).strftime("%H:%M"),
+                "window_at": (t0 + dt.timedelta(minutes=MIN_PER_PART * st["parts_to_window"])).strftime("%H:%M"),
+                "window_parts": st["parts_to_window"], "opened": t0.strftime("%H:%M")}
+
+    def chosen() -> dict | None:
+        p = mill_plan()
+        if not p:
+            return None
+        k = pick() or p["recommendation"]["key"]
+        return next((o for o in p["options"] if o["key"] == k), p["recommendation"])
+
+    def reset_mill():
         nonlocal w, crew
         w = new_world()
         crew = Crew(w, MODE)
-        mill_step.set(0)
-        mill_plan.set(None)
-        mill_exec.set(None)
+        for v, x in ((mill_step, 0), (mill_plan, None), (mill_exec, None), (mill_comms, None), (mill_extra, []),
+                     (mill_t0, None), (pick, None), (alert_sel, None)):
+            v.set(x)
+        alerts_rev.set(alerts_rev() + 1)
+
+    @reactive.effect
+    @reactive.event(input.mill_reset)
+    def _():
+        reset_mill()
 
     @reactive.effect
     @reactive.event(input.mill_change)
     def _():
-        mill_step.set(max(mill_step(), 1))
+        if mill_step() >= 1:
+            return
+        mill_t0.set(dt.datetime.now())
+        mill_step.set(1)
+        mill_comms.set(crew.alert_mill())  # Comms emails the floor as soon as the story changes
+        alerts_rev.set(alerts_rev() + 1)
 
     @reactive.effect
     @reactive.event(input.mill_assess)
     def _():
         if mill_step() < 1:
+            mill_t0.set(dt.datetime.now())
             mill_step.set(1)
+            mill_comms.set(crew.alert_mill())
+            alerts_rev.set(alerts_rev() + 1)
         with ui.Progress() as p:
             p.set(message="Crew is assessing VM-07...")
             mill_plan.set(crew.plan_mill())
+        pick.set(None)
+        mill_exec.set(None)
         mill_step.set(2)
+
+    @reactive.effect
+    @reactive.event(input.mill_pick)
+    def _():
+        pick.set(input.mill_pick())
 
     @reactive.effect
     @reactive.event(input.mill_approve)
     def _():
-        if mill_plan() is None:
+        p, c = mill_plan(), chosen()
+        if p is None or mill_step() != 2:
             return
-        mill_exec.set(crew.execute(mill_plan(), "Foreman"))
+        note = (input.mill_note() or "").strip()
+        mill_exec.set(crew.execute({**p, "recommendation": c}, "Foreman"))
+        if note:
+            mill_extra.set(mill_extra() + [{"agent": "Foreman", "verb": "left a note", "say": note, "tools": [],
+                                            "time": dt.datetime.now().strftime("%H:%M")}])
         mill_step.set(3)
 
-    @render.plot(alt="VM-07 spindle power and overstrain over parts")
+    @reactive.effect
+    @reactive.event(input.mill_reject)
+    def _():
+        if mill_step() != 2:
+            return
+        note = (input.mill_note() or "").strip() or "No reason given."
+        mill_extra.set(mill_extra() + [{"agent": "Foreman", "verb": "rejected the proposal", "tools": [],
+                                        "time": dt.datetime.now().strftime("%H:%M"),
+                                        "say": f"Rejected. {note} Nothing changes on the machine."}])
+        mill_step.set(4)
+
+    @reactive.effect
+    @reactive.event(input.mill_replan)
+    def _():
+        mill_step.set(2)
+
+    @reactive.effect
+    @reactive.event(input.mill_revert)
+    def _():
+        if mill_step() != 3:
+            return
+        n0 = len(w.trace)
+        w.agent = "Foreman"
+        w.write_mill_setpoint(1500.0, 56.0, approved_by="Foreman")
+        mill_extra.set(mill_extra() + [{"agent": "Foreman", "verb": "reverted the setpoint", "tools": w.trace[n0:],
+                                        "say": "Setpoint back to 1,500 rpm / 56 Nm. The proposal is open again; the "
+                                               "reserved part and booked work order stay in place."}])
+        mill_exec.set(None)
+        mill_step.set(2)
+
+    @render.ui
+    def plant_chip():
+        s = mill_step()
+        risk = 1 if s in (1, 2, 4) else 0
+        return ui.span(ui.span("PLANT", class_="k"), ui.span(ui.tags.b(str(12 - risk)), " healthy"),
+                       ui.span(ui.tags.b(str(risk)), " at risk", class_="risk" if risk else None),
+                       ui.span(ui.tags.b(str(len(w.ops.work_orders))), " WOs today"), class_="plantchip")
+
+    @render.ui
+    def mill_health():
+        s = mill_step()
+        if s in (1, 2, 4):
+            return skew("! AT RISK", "health risk")
+        if s == 3:
+            return skew("✓ PROTECTED", "health prot")
+        return skew("✓ HEALTHY", "health ok")
+
+    @render.ui
+    def mill_incident():
+        s = mill_step()
+        if s == 0:
+            return ui.div()
+        n = mill_numbers()
+        if s == 3:
+            c = chosen()
+            head = (f"VM-07 is running at {n['rpm']:,.0f} rpm until the {n['window_at']} insert change."
+                    if c and c["key"] == "lift_and_coast" else f"{c['title'] if c else 'Plan'} approved for VM-07.")
+            wo = (mill_exec() or {}).get("work_order") or {}
+            return ui.div(ui.div("MITIGATED", class_="flag ink"),
+                          ui.div(ui.div(ui.div(head, class_="head"),
+                                        ui.div(f"{INCIDENT} · approved by Foreman · {wo.get('wo', '')} booked · SEV-2",
+                                               class_="meta"), style="flex:1 1 320px;min-width:0"),
+                                 ui.input_action_button("mill_revert", "Revert setpoint", class_="btn-quiet"),
+                                 class_="body"), class_="incident", role="status")
+        if s == 4:
+            body = [ui.div(ui.div("Proposal rejected. VM-07 is still close to its power limit.", class_="head"),
+                           ui.div(f"{INCIDENT} · nothing changed on the machine · SEV-2", class_="meta"),
+                           style="flex:1 1 320px;min-width:0"),
+                    ui.input_action_button("mill_replan", "Reopen the proposal", class_="btn-quiet")]
+            return ui.div(ui.div("INCIDENT", class_="flag red"), ui.div(*body, class_="body"), class_="incident",
+                          role="status")
+        action = (ui.a("Review proposal ↓", href="#proposal", class_="cta") if s == 2
+                  else ui.span("Crew is analyzing · press 2 to assess", class_="working"))
+        return ui.div(ui.div("INCIDENT", class_="flag red"),
+                      ui.div(ui.div(ui.div(f"VM-07 hits its power limit in about {MIN_PER_PART * n['parts']} min "
+                                           f"({n['limit_at']}).", class_="head"),
+                                    ui.div(f"{INCIDENT} · opened {n['opened']} by Sentinel · operator alerted by Comms"
+                                           f" · SEV-2", class_="meta"), style="flex:1 1 320px;min-width:0"),
+                             action, class_="body"), class_="incident", role="status")
+
+    @render.ui
+    def mill_stats():
+        s, n = mill_step(), mill_numbers()
+        risk = s in (1, 2, 4)
+        head = 100 * (9.0 - n["kw"]) / 9.0
+        red, green, ink, amber = "#E10600", "#00A651", "#15151E", "#FFB800"
+        parts = "60+" if n["parts"] >= 60 else str(n["parts"])
+        mins = MIN_PER_PART * n["parts"]
+        return ui.div(
+            stat("SPINDLE POWER", f"{n['kw']:.1f}", "of 9.0 kW", f"{head:.0f}% margin to the PWF limit",
+                 red if risk else green, 100 * n["kw"] / 9.0, warn=risk),
+            stat("PARTS TO LIMIT", parts, "parts",
+                 f"≈ {mins} min · limit at {n['limit_at']}" if n["parts"] < 60 else "over 4 h · no limit in range",
+                 red if risk else green, min(100, 100 * n["parts"] / max(n["window_parts"], 1)), warn=risk),
+            stat("MAINTENANCE WINDOW", n["window_at"], "", f"shift change · {n['window_parts']} parts · "
+                 f"{MIN_PER_PART * n['window_parts'] // 60} h", ink, 50),
+            stat("INSERT WEAR", f"{n['wear']:.0f}", "of 200 min", "replace above 180 (manual)", amber,
+                 100 * n["wear"] / 200),
+            class_="stats")
+
+    @render.plot(alt="VM-07 spindle power per part against the 9 kW limit")
     def mill_signals():
-        now = 19 if mill_step() == 0 else 21
-        return viz.mill_signals(MILL_ROWS, now)
+        s = mill_step()
+        now = 19 if s == 0 else 21
+        sp = None
+        if s == 3:
+            st = w.mill_state
+            sp = st["torque"] * mill.omega(st["rpm"]) / 1000
+        return viz.mill_signals(MILL_ROWS, now, setpoint_kw=sp)
 
     @render.plot(alt="Safe operating envelope in speed and torque")
     def mill_envelope():
@@ -265,43 +1224,352 @@ def server(input, output, session):
         if mill_step() == 0:
             st.update(torque=40.0, d_temp=10.2)
         lc = None
-        if mill_step() >= 2 and mill_plan():
-            r = mill_plan()["recommendation"]
-            if r["key"] == "lift_and_coast":
-                lc = {"rpm": r["rpm"], "torque": r["torque"]}
+        c = chosen()
+        if mill_step() in (2, 3) and c and c["key"] == "lift_and_coast":
+            lc = {"rpm": c["rpm"], "torque": c["torque"]}
         return viz.envelope(st, lc)
 
     @render.ui
     def mill_status():
-        s = mill_step()
         msg = ["Normal window: 40 Nm, 6.3 kW, wide margins on every wall.",
-               "A harder steel lot arrived: torque jumped to 56 Nm and creeps 0.3 Nm per part.",
-               "Plan ready: the foreman decides.", "Approved and executing."][s]
-        return ui.p(msg, class_="small-note")
+               "Harder steel lot: torque 56 Nm, creeping 0.3 Nm per part.",
+               "Plan ready: the foreman decides.", "Approved and executing.", "Rejected."][mill_step()]
+        return ui.span(msg)
 
     @render.ui
     def mill_transcript():
-        turns = (mill_plan() or {}).get("turns", []) + (mill_exec() or {}).get("turns", [])
-        return transcript(turns)
+        plan = (mill_plan() or {}).get("turns", [])
+        comms = (mill_comms() or {}).get("turns", [])
+        turns = plan[:1] + comms + plan[1:] + (mill_exec() or {}).get("turns", []) + mill_extra()
+        return transcript(turns, "All walls clear. Sentinel checks every part; nothing to report.")
 
     @render.ui
     def mill_approval():
         p = mill_plan()
-        if not p:
+        if not p or mill_step() != 2:
             return ui.div()
         rec = p["recommendation"]
-        body = [options_table(p["options"], rec["key"], "mill"),
-                ui.p(f"Assumptions: ${p['assumptions']['contribution_per_hour']:,.0f}/h lost margin, "
-                     f"{p['assumptions']['cycle_min']:.0f} min per part, planned tool change "
-                     f"{p['assumptions']['planned_tool_change_min']:.0f} min. Replace with the plant's numbers.",
-                     class_="small-note")]
-        if mill_exec():
-            wo = mill_exec().get("work_order") or {}
-            body.append(ui.p(f"Approved by the foreman · {wo.get('wo', '')} scheduled · setpoint now "
-                             f"{w.mill_state['setpoint']}", class_="approved"))
-        else:
-            body.append(ui.input_action_button("mill_approve", f"Approve: {rec['title']}", class_="btn-success"))
-        return ui.card(ui.card_header("Approval: the foreman decides"), *body, class_="approval")
+        st = w.mill_state
+        n = mill_numbers()
+        opts = []
+        for o in p["options"]:
+            risk = 100 * o["p_fail_before_window"]
+            checked = {"checked": ""} if o["key"] == (pick() or rec["key"]) else {}
+            opts.append(ui.tags.label(
+                ui.tags.input(type="radio", name="mill_pick", value=o["key"], **checked),
+                ui.span(ui.span(o["title"], class_="t"),
+                        ui.span("RECOMMENDED", class_="rec") if o["key"] == rec["key"] else None,
+                        ui.span(o["detail"], class_="d")),
+                ui.span(ui.tags.b(f"${o['cost_usd']:,.0f}"), ui.span(f"risk {risk:.0f}%", class_="bad" if risk > 50 else None),
+                        class_="c"), class_="opt"))
+        c = chosen()
+
+        def row(field, was, now):
+            return ui.tags.tr(ui.tags.td(field), ui.tags.td(was), ui.tags.td(now))
+
+        lc = c["key"] == "lift_and_coast"
+        stop = c["key"] == "stop_now"
+        diff = ui.tags.table(
+            ui.tags.thead(ui.tags.tr(ui.tags.th("Field"), ui.tags.th("Current"), ui.tags.th("Proposed"))),
+            ui.tags.tbody(
+                row("Spindle speed", ui.span(f"{st['rpm']:,.0f} rpm", class_="was" if lc or stop else None),
+                    ui.span(f"{c['rpm']:,.0f} rpm" if lc else ("stopped" if stop else "no change"),
+                            class_="now" if lc or stop else "none")),
+                row("Feed (torque)", ui.span(f"{st['torque']:.0f} Nm", class_="was" if lc else None),
+                    ui.span(f"{c['torque']:.0f} Nm", class_="now") if lc else ui.span("no change", class_="none")),
+                row("Insert change", ui.span("not planned", class_="none"),
+                    ui.span(f"shift change, {n['window_at']}" if lc else ("now" if stop else "not planned"),
+                            class_="now" if (lc or stop) else "none")),
+                row("Part reservation", ui.span("none", class_="none"), ui.span("INSERT-CNMG-L × 1", class_="now")),
+                row("Purchase order", ui.span("none", class_="none"),
+                    ui.span(ui.span("drafted if stock drops below reorder", class_="now"),
+                            ui.span(" · auto under the $500 policy", class_="none")))),
+            class_="diff")
+        a = p["assumptions"]
+        return ui.div(
+            ui.div(ui.div("YOUR CALL", class_="flag amber"),
+                   ui.div(ui.h2(f"Proposed action: {rec['title']} until shift change"),
+                          ui.span(f"from Race Engineer · {INCIDENT}", class_="m"),
+                          ui.span("tool numbers only", class_="m r"), class_="txt"), class_="bandhd"),
+            ui.div(ui.div(ui.h3("CHANGES IF APPROVED"), ui.div(diff, style="overflow-x:auto"),
+                          ui.p(f"Why: {c['detail']} Assumptions: ${a['contribution_per_hour']:,.0f}/h lost margin, "
+                               f"{a['cycle_min']:.0f} min per part, planned tool change "
+                               f"{a['planned_tool_change_min']:.0f} min. Replace with the plant's numbers.",
+                               class_="why"), class_="l"),
+                   ui.div(ui.h3("OPTIONS COMPARED"), ui.div(*opts, role="radiogroup"),
+                          ui.p("Expected cost = P(fail before the window) × unplanned stop + planned stop + slower "
+                               "output. Source: price_mill_options()", class_="why"), class_="r"),
+                   class_="split"),
+            ui.div(ui.input_text("mill_note", "Note for the record (optional)", placeholder="e.g. hold feed on order 5521"),
+                   ui.input_action_button("mill_reject", "Reject", class_="btn-reject"),
+                   ui.input_action_button("mill_approve", ui.TagList("Approve ", ui.output_text("pick_title", inline=True)),
+                                          class_="btn-approve"),
+                   class_="decide"),
+            id="proposal", class_="proposal")
+
+    @render.text
+    def pick_title():
+        c = chosen()
+        return c["title"] if c else ""
+
+    @render.ui
+    def mill_wo():
+        e = mill_exec()
+        if not e or mill_step() != 3:
+            return ui.div()
+        wo = e.get("work_order") or {}
+        tools = [x for t in e.get("turns", []) for x in t.get("tools", [])]
+        po = next((x["result"] for x in tools if x["tool"] == "draft_po"), None)
+        res = next((x["result"] for x in tools if x["tool"] == "reserve_part"), {})
+        st = w.mill_state
+        parts = ", ".join(f"{p[0]} × {p[1]}" for p in wo.get("parts", []))
+        return ui.div(
+            ui.div(ui.div("SCHEDULED", class_="flag green"),
+                   ui.div(ui.span(wo.get("wo", ""), class_="m", style="font-family:'JetBrains Mono',monospace"),
+                          ui.h2(wo.get("title", "")),
+                          ui.span(f"approved by {wo.get('approved_by') or 'Foreman'} · created by Dispatcher", class_="m r"),
+                          class_="txt"), class_="bandhd"),
+            ui.div(ui.div(ui.div("Asset", class_="k"), ui.div(f"{wo.get('asset', '')} · Line 2", class_="v")),
+                   ui.div(ui.div("Assignee", class_="k"), ui.div(wo.get("tech", ""), class_="v")),
+                   ui.div(ui.div("Due", class_="k"), ui.div(f"{wo.get('due', '')} ({mill_numbers()['window_at']})",
+                                                            class_="v")),
+                   ui.div(ui.div("Machine setpoint until then", class_="k"), ui.div(st["setpoint"], class_="v")),
+                   class_="wo-grid"),
+            ui.div(ui.div(ui.h4("CHECKLIST"),
+                          ui.tags.ul(*[ui.tags.li(ui.span(class_="box-check"), x) for x in
+                                       ["Lock out the spindle", *wo.get("evidence", [])[1:],
+                                        "Restore the normal setpoint and record the failure mode"]])),
+                   ui.div(ui.h4("PARTS AND LINKED RECORDS"),
+                          ui.tags.ul(ui.tags.li(parts, ui.span(" reserved", class_="okc"),
+                                                f" · {res.get('available_after', '?')} left on the shelf"),
+                                     ui.tags.li(f"{po['po']} · {po['qty']} inserts · ${po['total_usd']:,.0f} · ",
+                                                ui.span(po["status"], class_="okc")) if po else None,
+                                     ui.tags.li(f"{INCIDENT} · evidence and agent trace attached"))),
+                   class_="wo-more"),
+            class_="proposal")
+
+    # ---------------- incidents: built from the session's own state and trace, plus today's closed ones
+    def live_incidents() -> list[dict]:
+        alerts_rev()
+        s = mill_step()
+        out = []
+        if s >= 1:
+            trace = w.trace
+            first = {}
+            for x in trace:
+                first.setdefault(x["agent"], clock(x["t"]))
+            n = mill_numbers()
+            status = {1: "OPEN", 2: "AWAITING APPROVAL", 3: "MITIGATED", 4: "OPEN"}[s]
+            seen = next((x["result"] for x in trace if x["tool"] == "read_mill"), None)  # the first reading
+            chain = [(n["opened"], "Sentinel", "Detect",
+                      f"Power {seen['power_w'] / 1000:.1f} kW, about {seen['parts_until_wall']} parts to the PWF limit"
+                      if seen else "Torque stepped up with the new steel lot")]
+            a = next((x for x in w.alerts if x["ref"] == "VM-07"), None)
+            if a:
+                chain.append((a["sent_at"][:5], "Comms", "Notify", f"{a['severity']} email to "
+                              f"{', '.join(a['to'])} · {a['status']}"))
+            plan = mill_plan()
+            if plan:
+                rec = plan["recommendation"]
+                chain.append((first.get("Diagnostician", ""), "Diagnostician", "Analyze",
+                              "Dulling insert on harder stock; heat wall live below 1,380 rpm"))
+                chain.append((first.get("Race Engineer", ""), "Race Engineer", "Plan",
+                              f"{rec['title']}: ${rec['cost_usd']:,.0f} expected"))
+            for t in mill_extra():
+                chain.append((t.get("time") or (clock(t["tools"][0]["t"]) if t.get("tools") else ""), "Foreman",
+                              "Decide", t["say"]))
+            e = mill_exec()
+            linked = [a["id"]] if a else []
+            if e:
+                c = chosen()
+                chain.append((first.get("Foreman", ""), "Foreman", "Approve", f"Approved: {c['title'] if c else ''}"))
+                for t in e.get("turns", []):
+                    if t["agent"] in ("Quartermaster", "Dispatcher"):
+                        chain.append((clock(t["tools"][0]["t"]) if t.get("tools") else "", t["agent"], "Execute",
+                                      t["say"]))
+                wo = (e.get("work_order") or {}).get("wo")
+                linked += [x["result"]["po"] for t in e["turns"] for x in t.get("tools", []) if x["tool"] == "draft_po"]
+                linked += [wo] if wo else []
+            out.append({"id": INCIDENT, "asset": "VM-07", "summary": "Power near the PWF limit after steel lot "
+                        "change" + ("; Lift & Coast to the shift change" if s == 3 else ""), "severity": "SEV-2",
+                        "status": status, "opened": n["opened"],
+                        "owner": {1: "Sentinel", 2: "Foreman", 3: "Dispatcher", 4: "Race Engineer"}[s],
+                        "linked": linked, "page": "mill", "chain": chain})
+        return out + INCIDENT_HISTORY
+
+    @render.ui
+    def incident_badge():
+        n = sum(i["status"] not in ("MITIGATED", "RESOLVED") for i in live_incidents())
+        return ui.span(str(n), class_="badge-n hot" if n else "badge-n")
+
+    @reactive.effect
+    @reactive.event(input.incident_sel)
+    def _():
+        incident_sel.set(input.incident_sel())
+
+    def selected_incident(inc: list[dict]) -> dict | None:
+        return next((i for i in inc if i["id"] == incident_sel()), inc[0] if inc else None)
+
+    @render.ui
+    def incident_stats():
+        inc = live_incidents()
+        open_ = [i for i in inc if i["status"] not in ("MITIGATED", "RESOLVED")]
+        waiting = [i for i in inc if i["status"] == "AWAITING APPROVAL"]
+
+        def minutes(i):  # detection to the last execute step, from the chain's clock times
+            ts = [t for t, _, step, _ in i["chain"] if t and step in ("Detect", "Execute")]
+            h0, m0 = map(int, ts[0].split(":"))
+            h1, m1 = map(int, ts[-1].split(":"))
+            return (h1 * 60 + m1) - (h0 * 60 + m0)
+
+        closed = sorted(minutes(i) for i in inc if i["status"] in ("MITIGATED", "RESOLVED")
+                        and any(step == "Execute" for _, _, step, _ in i["chain"]))
+        median = str(closed[len(closed) // 2]) if closed else "—"
+        return ui.div(
+            stat("OPEN", str(len(open_)), "", "need attention" if open_ else "nothing open",
+                 "#E10600" if open_ else "#00A651", 100 if open_ else 0, warn=bool(open_)),
+            stat("AWAITING YOUR CALL", str(len(waiting)), "", "foreman approval", "#FFB800", 100 if waiting else 0),
+            stat("MITIGATED / RESOLVED", str(len(inc) - len(open_)), "", "today", "#00A651",
+                 100 * (len(inc) - len(open_)) / max(len(inc), 1)),
+            stat("MEDIAN DETECT → WORK ORDER", median, "min", f"{len(closed)} closed incidents today", "#15151E", 40),
+            class_="stats")
+
+    @render.ui
+    def incident_table():
+        inc = live_incidents()
+        sel = selected_incident(inc)
+        cls = {"OPEN": "esc", "AWAITING APPROVAL": "wait", "MITIGATED": "ack", "RESOLVED": "sent"}
+        rows = [ui.tags.tr(ui.tags.td(i["id"], style="font-family:'JetBrains Mono',monospace;font-size:12px"),
+                           ui.tags.td(ui.span(i["status"], class_=f"st {cls.get(i['status'], 'sent')}")),
+                           ui.tags.td(i["severity"]), ui.tags.td(ui.tags.b(i["asset"])), ui.tags.td(i["summary"]),
+                           ui.tags.td(tag(i["owner"]), " ", i["owner"], style="white-space:nowrap"),
+                           ui.tags.td(i["opened"]), ui.tags.td(", ".join(i["linked"]) or "—"),
+                           class_="inc-row" + (" sel" if sel and i["id"] == sel["id"] else ""),
+                           **{"data-id": i["id"]}) for i in inc]
+        head = ["ID", "Status", "Sev", "Asset", "Summary", "Owner", "Opened", "Linked"]
+        return ui.div(ui.tags.table(ui.tags.thead(ui.tags.tr(*[ui.tags.th(h) for h in head])), ui.tags.tbody(*rows),
+                                    class_="opts inc"), style="overflow-x:auto;padding:4px 12px 8px")
+
+    @render.ui
+    def incident_detail():
+        i = selected_incident(live_incidents())
+        if not i:
+            return ui.div()
+        items = [ui.tags.li(ui.div(tag(agent)),
+                            ui.div(ui.div(ui.tags.b(agent), ui.span(step), ui.span(t, class_="t"), class_="top"),
+                                   ui.div(text, class_="say"))) for t, agent, step, text in i["chain"]]
+        go = (ui.tags.button(f"Open {i['asset']}", type="button", class_="btn-quiet goto",
+                             **{"data-page": i["page"]}) if i.get("page") else None)
+        return box(f"{i['id']} · chain", ui.tags.ol(*items, class_="act"), go,
+                   note=f"{i['asset']} · {i['severity']} · {i['status']}", pad=False)
+
+    # ---------------- alerts
+    @render.ui
+    def alert_stats():
+        al = live_alerts()
+        waiting = [a for a in al if a["status"] in ("awaiting ack", "escalated")]
+        appr = [a for a in al if a["status"] == "needs approval"]
+        sent = [a for a in al if a.get("sent_at")]
+        return ui.div(
+            stat("SENT TODAY", str(len(sent)), "alerts", "email, SMS and digests", "#15151E", 10 * len(sent)),
+            stat("AWAITING ACK", str(len(waiting)), "", "escalates by policy" if waiting else "all acknowledged",
+                 "#E10600" if waiting else "#00A651", 100 if waiting else 0, warn=bool(waiting)),
+            stat("ESCALATED", str(sum(a["status"] == "escalated" for a in al)), "", "to the line supervisor",
+                 "#E10600", 0),
+            stat("NEEDS YOUR APPROVAL", str(len(appr)), "", "external email to a supplier", "#2E5BD8", 100 if appr else 0),
+            class_="stats")
+
+    def selected_alert(al: list[dict]) -> dict | None:
+        sid = alert_sel()
+        return next((a for a in al if a["id"] == sid), al[0] if al else None)
+
+    @reactive.effect
+    @reactive.event(input.alert_sel)
+    def _():
+        alert_sel.set(input.alert_sel())
+
+    @render.ui
+    def alert_list():
+        al = live_alerts()
+        sel = selected_alert(al)
+        sev = {"SEV-1": "#E10600", "SEV-2": "#FFB800", "SEV-3": "#9A9DAA", "External": "#4D7CFE"}
+        cls = {"awaiting ack": "wait", "escalated": "esc", "acknowledged": "ack", "needs approval": "appr"}
+        rows = []
+        for a in al:
+            rows.append(ui.tags.li(ui.tags.button(
+                ui.span(class_="sev", style=f"background:{sev.get(a['severity'], '#D5D6DD')}"),
+                ui.span(ui.span(ui.span(a["ref"]), ui.span(a["status"].upper(), class_=f"st {cls.get(a['status'], 'sent')}"),
+                                ui.span((a.get("sent_at") or "draft")[:5], class_="t"), class_="r1"),
+                        ui.span(a["subject"], class_="subj"), ui.span("To " + ", ".join(a["to"]), class_="to")),
+                type="button", class_="sel" if sel and a["id"] == sel["id"] else None, **{"data-id": a["id"]})))
+        return ui.tags.ul(*rows, class_="alist")
+
+    @render.ui
+    def alert_detail():
+        al = live_alerts()
+        a = selected_alert(al)
+        if not a:
+            return box("Email", ui.p("No alerts yet. Change the sensor story on VM-07 to see Comms at work.",
+                                     class_="idle"), pad=True)
+        live = any(x["id"] == a["id"] for x in w.alerts)
+        flag = {"SEV-1": "red", "SEV-2": "amber", "SEV-3": "ink", "External": "ink"}.get(a["severity"], "ink")
+        email = ui.div(
+            ui.div(ui.div(a["severity"].upper(), class_=f"flag {flag}"),
+                   ui.div(ui.span(a["ref"], class_="m", style="font-family:'JetBrains Mono',monospace"),
+                          ui.h2(f"{a['channel']} · {a['severity']}"),
+                          ui.span("written by Comms" + (f" · {a['sent_at']}" if a.get("sent_at") else " · draft"),
+                                  class_="m r"), class_="txt"), class_="bandhd"),
+            ui.div(ui.span("From", class_="k"), ui.span("PitCrew Comms <alerts@plant.example>"),
+                   ui.span("To", class_="k"), ui.span(", ".join(a["to"])),
+                   ui.span("Subject", class_="k"), ui.span(a["subject"], style="font-weight:600"), class_="mailhd"),
+            ui.div(ui.p(a["body"], style="margin:0"),
+                   ui.div(ui.div("PLEASE CHECK", class_="k"), ui.tags.ol(*[ui.tags.li(c) for c in a["checks"]]),
+                          class_="checks"),
+                   ui.div(ui.span("Acknowledge", class_="p"), ui.span("Open in PitCrew", class_="s"),
+                          ui.span("buttons as the operator sees them in the email", class_="n"), class_="fakebtns"),
+                   class_="mailbd"),
+            class_="proposal")
+        st = a["status"]
+        ext = a["severity"] == "External"
+        steps = [("Drafted", "done", a.get("sent_at") or "now"),
+                 ("Approve to send" if ext and st == "needs approval" else "Sent",
+                  "done" if a.get("sent_at") else "wait", a.get("sent_at") or "awaiting you"),
+                 ("Delivered", "done" if a.get("sent_at") else "wait", a.get("sent_at") or "—"),
+                 ("Escalated" if st == "escalated" else "Acknowledged",
+                  "esc" if st == "escalated" else ("done" if st == "acknowledged" else "wait"),
+                  a.get("escalated_at") or a.get("acked_at") or "pending")]
+        step_ui = ui.tags.ol(*[ui.tags.li(ui.tags.i(class_=k if k != "wait" else None),
+                                          ui.div(lbl, class_=f"lbl {k}"), ui.div(t, class_="tm")) for lbl, k, t in steps],
+                             class_="steps")
+        note = None
+        if st == "awaiting ack" and a.get("escalate_after_min"):
+            note = ui.div(f"No acknowledgment yet. Comms escalates after {a['escalate_after_min']} min: "
+                          f"{a['rule']['escalate']}.", class_="escnote wait")
+        elif st == "escalated":
+            note = ui.div(f"Escalated at {a.get('escalated_at', '')[:5]}: {a['rule']['escalate']}.", class_="escnote esc")
+        btns = ui.div(ui.input_action_button("alert_ack", "Mark acknowledged", class_="btn-approve"),
+                      ui.input_action_button("alert_escalate", "Escalate now", class_="btn-reject"),
+                      class_="abtns") if live and st in ("awaiting ack", "escalated") else None
+        delivery = box("Delivery", step_ui, note, btns, note=f"{a['severity']} rule · {a['rule']['sends'].lower()}")
+        return ui.div(email, delivery, style="display:flex;flex-direction:column;gap:20px")
+
+    @reactive.effect
+    @reactive.event(input.alert_ack)
+    def _():
+        a = selected_alert(live_alerts())
+        if a and any(x["id"] == a["id"] for x in w.alerts):
+            w.agent = "Comms"
+            w.ack_alert(a["id"], "Line 2 operator")
+            alerts_rev.set(alerts_rev() + 1)
+
+    @reactive.effect
+    @reactive.event(input.alert_escalate)
+    def _():
+        a = selected_alert(live_alerts())
+        if a and any(x["id"] == a["id"] for x in w.alerts):
+            w.agent = "Comms"
+            w.escalate_alert(a["id"])
+            alerts_rev.set(alerts_rev() + 1)
 
     # ---------------- towers
     @render.plot(alt="Fleet map with flagged towers")
@@ -384,8 +1652,8 @@ def server(input, output, session):
                              + (f" · {len(b)} more towers batched on the same truck roll" if b else ""),
                              class_="approved"))
         else:
-            body.append(ui.input_action_button("tower_approve", f"Approve: {rec['title']}", class_="btn-success"))
-        return ui.card(ui.card_header(f"Approval: tower {p['tower_id']}"), *body, class_="approval")
+            body.append(ui.input_action_button("tower_approve", f"Approve: {rec['title']}", class_="btn-approve"))
+        return ui.card(ui.card_header(f"Your call: tower {p['tower_id']}"), *body, class_="approval")
 
     # ---------------- improve
     @reactive.effect
