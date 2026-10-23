@@ -18,11 +18,26 @@ python3 scripts/run_sourcing.py            # offline sanity check: ends with PO-
 If the workshop kit has its own deploy script, use it with **`agentcore/agent.py` as the entrypoint**.
 Otherwise, the AgentCore starter toolkit:
 
+**Pre-flight (2 min, do this first):** run the exact entrypoint the container runs, against Bedrock:
+
+```bash
+export AWS_REGION=us-east-1 PITCREW_LLM=bedrock PITCREW_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0
+python3 -m agentcore.agent &          # starts on port 8080
+sleep 8; curl -s localhost:8080/ping
+curl -s -X POST localhost:8080/invocations -H 'Content-Type: application/json' -d '{"action":"sourcing"}' | head -c 600
+kill %1
+```
+
+You want `"mode": "bedrock"` and `PO-7711` in the output. If it says `offline (fallback)`, fix Bedrock first
+(docs/BEDROCK.md) — deploying won't fix it.
+
 ```bash
 pip3 install bedrock-agentcore-starter-toolkit
 agentcore configure --entrypoint agentcore/agent.py --name pitcrew \
-  --requirements-file requirements-agent.txt --region "$AWS_REGION"
-#   accept the defaults: create execution role, create ECR repo, no OAuth
+  --requirements-file requirements-agent.txt --region "$AWS_REGION" \
+  --deployment-type container --disable-memory --non-interactive
+#   container: the dependencies (scipy, pandas, pvlib...) are too big for the 250 MB zip deploy
+#   --disable-memory: we don't use AgentCore Memory, and creating it adds minutes
 agentcore launch \
   --env PITCREW_LLM=bedrock \
   --env PITCREW_MODEL_ID=<model ID from Mudit, e.g. us.anthropic.claude-sonnet-4-5-20250929-v1:0>
@@ -32,6 +47,9 @@ agentcore launch \
 
 If `--env` isn't accepted by your toolkit version, run `agentcore launch` without it: `agent.py` defaults
 to `PITCREW_LLM=bedrock` and the code's default model ID; then make sure Mudit enables that model.
+
+If `configure`/`launch` fails creating an IAM role (workshop accounts sometimes block `iam:CreateRole`),
+use the workshop kit's `setup_agentcore_role.py` and pass its role ARN with `--execution-role <arn>`.
 
 The execution role needs Bedrock invoke permission (`bedrock:InvokeModel`,
 `bedrock:InvokeModelWithResponseStream`); the toolkit's auto-created role has it. If invoke returns
