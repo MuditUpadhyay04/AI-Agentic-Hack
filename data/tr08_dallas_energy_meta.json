@@ -1,0 +1,19 @@
+{
+  "source": "Clear sky (Ineichen), Dallas TX, 10-min steps, year 2026; TR-08 face (60 deg tilt, wings 20 deg), 8 x 445 W = 3.56 kWdc, SAPM open-rack glass/polymer, other losses 0.90 (DFW tower fit)",
+  "upper_bound_note": "Clear sky has no clouds: absolute kWh are an upper bound, ratios between options hold.",
+  "annual_kwh": {
+    "track": 9817.5,
+    "step10": 9810.4,
+    "step15": 9801.6,
+    "step30": 9753.7
+  },
+  "annual_kwh_per_kw_tracking": 2757.7,
+  "best_fixed_azimuth": 180,
+  "best_fixed_kwh": 6882.9,
+  "best_fixed_share_of_tracking": 0.7011,
+  "engine_check": {
+    "engine_kwh_per_year": 9817.5,
+    "pitcrew_kwh_per_year": 9817.5,
+    "difference_pct": 0.0
+  }
+}

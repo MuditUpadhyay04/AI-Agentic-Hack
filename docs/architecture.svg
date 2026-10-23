@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 560" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#7b8794"/></marker>
+    <style>
+      .box{fill:#fff;stroke:#c5ccd3;stroke-width:1.2}
+      .agent{fill:#eef4ff;stroke:#2563eb;stroke-width:1.4}
+      .human{fill:#fff4e6;stroke:#e8590c;stroke-width:1.6}
+      .k{fill:#f1f8f2;stroke:#2f9e44;stroke-width:1.2}
+      .h{font-weight:600;fill:#1f2933}
+      .s{fill:#52606d;font-size:11.5px}
+      .lane{fill:#f7f8fa;stroke:#e4e7eb}
+      .ln{stroke:#7b8794;stroke-width:1.3;fill:none}
+    </style>
+  </defs>
+  <text x="24" y="30" class="h" font-size="17">PitCrew on AWS: Run, Improve, Grow over one knowledge layer</text>
+  <text x="24" y="50" class="s">Strands agents on Bedrock AgentCore Runtime; tools through AgentCore Gateway (MCP) under Policy; suppliers over A2A</text>
+
+  <rect x="20" y="70" width="1060" height="200" rx="10" class="lane"/>
+  <text x="34" y="92" class="h">RUN (minutes) — a Strands Graph</text>
+  <rect x="34" y="110" width="150" height="70" rx="8" class="box"/>
+  <text x="46" y="132" class="h">Signals</text>
+  <text x="46" y="150" class="s">Mill: AI4I stream</text>
+  <text x="46" y="166" class="s">Tower: current, encoder</text>
+  <rect x="210" y="110" width="130" height="70" rx="8" class="agent"/>
+  <text x="222" y="132" class="h">Sentinel</text><text x="222" y="150" class="s">Monitor</text><text x="222" y="166" class="s">margin to each wall</text>
+  <rect x="362" y="110" width="140" height="70" rx="8" class="agent"/>
+  <text x="374" y="132" class="h">Diagnostician</text><text x="374" y="150" class="s">Analyze</text><text x="374" y="166" class="s">cause + manual line</text>
+  <rect x="524" y="110" width="150" height="70" rx="8" class="agent"/>
+  <text x="536" y="132" class="h">Race Engineer</text><text x="536" y="150" class="s">Plan: Lift &amp; Coast,</text><text x="536" y="166" class="s">Park &amp; Price</text>
+  <rect x="696" y="110" width="110" height="70" rx="8" class="human"/>
+  <text x="708" y="132" class="h">Foreman</text><text x="708" y="150" class="s">approves</text><text x="708" y="166" class="s">(human gate)</text>
+  <rect x="828" y="102" width="236" height="40" rx="8" class="agent"/>
+  <text x="840" y="127" class="h">Quartermaster</text><text x="950" y="127" class="s">parts, PO, A2A</text>
+  <rect x="828" y="152" width="236" height="40" rx="8" class="agent"/>
+  <text x="840" y="177" class="h">Dispatcher</text><text x="930" y="177" class="s">work order, route batch</text>
+  <path class="ln" d="M184 145H208" marker-end="url(#a)"/><path class="ln" d="M340 145H360" marker-end="url(#a)"/>
+  <path class="ln" d="M502 145H522" marker-end="url(#a)"/><path class="ln" d="M674 145H694" marker-end="url(#a)"/>
+  <path class="ln" d="M806 135H826" marker-end="url(#a)"/><path class="ln" d="M806 160H826" marker-end="url(#a)"/>
+  <rect x="210" y="200" width="854" height="54" rx="8" class="box"/>
+  <text x="222" y="222" class="h">AgentCore Gateway (MCP tools) + Policy (Cedar)</text>
+  <text x="222" y="242" class="s">CMMS / work orders · inventory · purchase orders · technician roster · setpoint writer — POs over $500 and any setpoint change need the foreman</text>
+
+  <rect x="20" y="284" width="520" height="120" rx="10" class="lane"/>
+  <text x="34" y="306" class="h">IMPROVE (weekly)</text>
+  <rect x="34" y="320" width="492" height="70" rx="8" class="agent"/>
+  <text x="46" y="342" class="h">Kaizen agent</text>
+  <text x="46" y="360" class="s">rules from data (AI4I) · supplier-lot rates · Sensor Futures</text>
+  <text x="46" y="376" class="s">→ design-change request for the Design studio / Tower lab (TR-09)</text>
+
+  <rect x="560" y="284" width="520" height="120" rx="10" class="lane"/>
+  <text x="574" y="306" class="h">GROW (per machine, sensor, supplier, site)</text>
+  <rect x="574" y="320" width="492" height="70" rx="8" class="agent"/>
+  <text x="586" y="342" class="h">Onboarder</text>
+  <text x="586" y="360" class="s">manual → asset passport (walls, signals, future hardware slots)</text>
+  <text x="586" y="376" class="s">human signs → new asset agents start; installed slot → new detectors</text>
+
+  <rect x="20" y="418" width="1060" height="126" rx="10" class="lane"/>
+  <text x="34" y="440" class="h">KNOWLEDGE — shared by every loop</text>
+  <rect x="34" y="454" width="200" height="74" rx="8" class="k"/>
+  <text x="46" y="476" class="h">Bedrock Knowledge Base</text><text x="46" y="494" class="s">machine manuals</text><text x="46" y="510" class="s">(search_manual tool)</text>
+  <rect x="250" y="454" width="200" height="74" rx="8" class="k"/>
+  <text x="262" y="476" class="h">AgentCore Memory</text><text x="262" y="494" class="s">incident history,</text><text x="262" y="510" class="s">verified failure records</text>
+  <rect x="466" y="454" width="200" height="74" rx="8" class="k"/>
+  <text x="478" y="476" class="h">Asset passports</text><text x="478" y="494" class="s">signed limits + slots</text><text x="478" y="510" class="s">(the unit of growth)</text>
+  <rect x="682" y="454" width="200" height="74" rx="8" class="k"/>
+  <text x="694" y="476" class="h">Energy model</text><text x="694" y="494" class="s">Shadow Calculator table:</text><text x="694" y="510" class="s">kWh by azimuth and day</text>
+  <rect x="898" y="454" width="166" height="74" rx="8" class="k"/>
+  <text x="910" y="476" class="h">Observability</text><text x="910" y="494" class="s">AgentCore traces,</text><text x="910" y="510" class="s">cost per decision</text>
+</svg>
