@@ -7,6 +7,10 @@ is genuinely agentic on AWS. The code is ready; you only need model access, cred
 
 The Model access page is retired: models switch on automatically the first time they're invoked.
 
+**Workshop allowlist:** the account denies models not on `ws-bedrock-model-allowlist-policy-1` (Sonnet 5.5 is
+blocked). Claude Sonnet 4.5 is allowed, so use the code's default
+`us.anthropic.claude-sonnet-4-5-20250929-v1:0`. Sonnet 5 / Opus 5 are also allowed if you find their `us.` IDs.
+
 1. AWS console → **Amazon Bedrock** → region the workshop uses (top right; usually `us-east-1` or
    `us-west-2`).
 2. Left menu → **Model catalog** → pick an **Anthropic Claude** model (Sonnet) → **Open in playground** →
