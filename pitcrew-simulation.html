@@ -1,0 +1,1686 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>PitCrew Pitch Simulation</title>
+<style>
+/* ── Theme: change colours here ─────────────────────────────────────────── */
+:root{
+  --bg:#F8FAFC; --surface:#FFFFFF; --text:#0F172A; --muted:#64748B; --line:#CBD5E1;
+  --maint:#2563EB;   /* maintenance */
+  --prev:#D97706;    /* prevention (and "low") */
+  --cure:#DC2626;    /* cure / urgent */
+  --supply:#0F766E;  /* manufacturing & supply chain */
+  --ok:#16A34A;      /* stock OK / done */
+  --low:#D97706;     /* stock low */
+  --faint:#94A3B8; --letterbox:#E2E8F0;
+  --track:#E6EBF1;   /* pit-lane surface */
+  --track2:#F0F3F7;  /* empty grid box */
+  --paint:#C2CCD8;   /* painted lines */
+  --radius:14px;
+  --shadow:0 1px 1px rgba(15,23,42,.05),0 8px 22px rgba(15,23,42,.08);
+  --lift:0 6px 10px rgba(15,23,42,.10),0 26px 50px rgba(15,23,42,.20);
+  --ease:cubic-bezier(.65,0,.35,1);
+  --font:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mv:600ms;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--letterbox)}
+body{font-family:var(--font);color:var(--text);-webkit-font-smoothing:antialiased}
+#stage{position:absolute;left:0;top:0;width:1920px;height:1080px;transform-origin:0 0;background:var(--bg);overflow:hidden;user-select:none;-webkit-user-select:none}
+#stage.instant,#stage.instant *{transition:none!important}
+.t-maintenance{--c:var(--maint)} .t-prevention{--c:var(--prev)} .t-cure{--c:var(--cure)}
+svg{display:block}
+.hide{opacity:0;pointer-events:none}
+.nb{white-space:nowrap}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+#hdr{position:absolute;left:0;top:0;width:1920px;height:88px;display:flex;align-items:center;justify-content:space-between;padding:0 60px 0 48px;background:var(--surface);border-bottom:1.5px solid var(--line);z-index:30}
+#brand{display:flex;align-items:center;gap:14px;font-size:40px;font-weight:900;letter-spacing:-.03em}
+#brandMark{width:30px;height:30px;border-radius:7px;overflow:hidden}
+#hdrR{display:flex;align-items:center;gap:30px}
+#clockWrap{perspective:600px}
+#clock{display:flex;gap:12px;align-items:baseline;height:56px;padding:0 20px;border-radius:12px;background:var(--text);color:#fff;font-variant-numeric:tabular-nums;transform-origin:50% 50%;line-height:56px}
+#cDay{display:inline-block;font-size:24px;font-weight:600;color:#CBD5E1}
+#cSep{color:#64748B;font-size:24px}
+#cTime{display:inline-block;font-size:32px;font-weight:800;letter-spacing:.01em}
+#dots{display:flex;gap:6px;align-items:center}
+.dot{width:16px;height:6px;border-radius:3px;background:var(--line);transition:background-color .35s,width .35s}
+.dot.past{background:var(--faint)}
+.dot.now{background:var(--supply);width:34px}
+.hbtn{display:flex;align-items:center;gap:8px;height:44px;padding:0 18px 0 13px;border-radius:999px;border:2px solid var(--line);background:var(--surface);color:var(--muted);font:800 18px var(--font);white-space:nowrap;cursor:pointer;transition:border-color .2s,color .2s,background-color .2s}
+.hbtn:hover{border-color:var(--text);color:var(--text)}
+.hbtn:focus-visible{outline:3px solid var(--supply);outline-offset:2px}
+.hbtn svg{display:block}
+#stage.res #resBtn{background:var(--text);border-color:var(--text);color:#fff}
+#rdots{display:none;gap:6px;align-items:center}
+#stage.res #clockWrap,#stage.res #dots{display:none}
+#stage.res #rdots{display:flex}
+
+/* ── Priority queue: the pit-lane grid ──────────────────────────────────── */
+#track{position:absolute;left:0;top:89px;width:1920px;height:347px;background:var(--track);border-bottom:5px solid #fff}
+#qhead{position:absolute;left:48px;top:98px;height:48px;display:flex;align-items:center;gap:20px}
+#qlabel{font-size:26px;font-weight:900;letter-spacing:-.01em}
+#qagent{display:flex;align-items:center;gap:10px;height:46px;padding:0 18px 0 6px;border-radius:999px;background:var(--text);color:#fff;font-size:20px;font-weight:700}
+.bot{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.14);color:#fff}
+#bubble{position:relative;margin-left:6px;font-size:24px;line-height:30px;padding:8px 22px;background:var(--surface);border-radius:12px;box-shadow:var(--shadow);white-space:nowrap}
+#bubble::before{content:"";position:absolute;left:-8px;top:50%;width:16px;height:16px;background:var(--surface);transform:translateY(-50%) rotate(45deg);border-radius:2px}
+#bubbleText{display:inline-block;position:relative}
+.typing{display:inline-flex;gap:7px;align-items:center;height:30px;vertical-align:top}
+.typing i{width:9px;height:9px;border-radius:50%;background:var(--muted);animation:blink 1s ease-in-out infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes blink{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-4px)}}
+#startline{position:absolute;left:44px;top:180px}
+.slot{position:absolute;top:180px;width:262px;height:210px;border:2.5px dashed var(--paint);border-radius:var(--radius);background:var(--track2)}
+.plabel{position:absolute;top:150px;height:26px;padding:0 10px;display:flex;align-items:center;border-radius:6px 6px 0 0;background:var(--text);color:#fff;font-size:18px;font-weight:900;letter-spacing:.02em}
+#more{position:absolute;top:255px;height:58px;padding:0 22px;display:flex;align-items:center;border-radius:999px;background:var(--surface);box-shadow:var(--shadow);font-size:22px;font-weight:800;color:var(--muted);transition:opacity .4s}
+#tag{position:absolute;top:398px;height:32px;padding:0 14px 0 10px;display:flex;align-items:center;gap:8px;border-radius:999px;font-size:20px;font-weight:800;color:#fff;background:var(--cure);transition:opacity .4s}
+#tagIcon{display:grid}
+
+/* ── Task cards ─────────────────────────────────────────────────────────── */
+#cardLayer{position:absolute;left:0;top:0;width:1920px;height:1080px;pointer-events:none;z-index:5}
+.card{position:absolute;left:0;top:0;width:262px;height:210px;padding:0 16px 14px;background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);transform-origin:50% 50%;will-change:transform;
+  transition:transform var(--mv) var(--ease),opacity 400ms ease,background-color 450ms ease}
+.card.hide{opacity:0}
+.card.front{z-index:10}
+.card .ring{position:absolute;inset:0;border-radius:var(--radius);pointer-events:none}
+.card .k{display:flex;justify-content:space-between;gap:8px;margin:0 -16px;padding:8px 16px;border-radius:var(--radius) var(--radius) 0 0;background:var(--c);color:#fff;font-size:18px;font-weight:800;line-height:22px;white-space:nowrap;transition:background-color .45s}
+.card .type{letter-spacing:.04em}
+.card .id{opacity:.88}
+.card .pn{font-size:30px;font-weight:900;line-height:36px;margin-top:8px;letter-spacing:-.015em}
+.card .nm{font-size:22px;line-height:27px}
+.card .site{font-size:18px;line-height:22px;color:var(--muted);margin-top:3px}
+.card .why{font-size:18px;line-height:23px;margin-top:6px;transition:opacity .4s}
+.card .fin{position:absolute;left:16px;right:12px;bottom:18px;display:flex;align-items:center;gap:8px;font-size:22px;font-weight:900;color:var(--ok);opacity:0;transition:opacity .4s}
+.card .fin svg path{stroke-dasharray:24;stroke-dashoffset:24;transition:stroke-dashoffset .5s ease .2s}
+.card.complete{--c:var(--ok);background:color-mix(in srgb,var(--ok) 8%,white)}
+.card.complete .why{opacity:0}
+.card.complete .fin{opacity:1}
+.card.complete .fin svg path{stroke-dashoffset:0}
+
+/* ── Source bays ────────────────────────────────────────────────────────── */
+#cols{position:absolute;left:0;top:0}
+.col{position:absolute;top:456px;width:573px;height:386px;padding:18px 26px;background:var(--surface);border-radius:16px;border-top:10px solid var(--c);box-shadow:var(--shadow);overflow:hidden;transition:opacity .9s ease}
+#cols.dim .col{opacity:.28}
+.col .hd{position:relative;display:flex;gap:18px;align-items:center}
+.col .ic{flex:none;width:58px;height:58px;border-radius:14px;display:grid;place-items:center;color:#fff;background:var(--c)}
+.col h2{margin:0;font-size:28px;line-height:32px;font-weight:900;letter-spacing:-.01em}
+.col .sub{font-size:22px;line-height:28px;color:var(--muted)}
+.col .src{position:relative;margin-top:12px;display:flex;gap:10px;align-items:flex-start;font-size:20px;line-height:26px}
+.col .si{flex:none;margin-top:1px;color:var(--muted);display:grid}
+.col .wm{position:absolute;right:-72px;bottom:-58px;color:var(--c);opacity:.06}
+.col .ghost{position:absolute;left:155px;top:156px;width:262px;height:210px;padding:20px;border:2.5px dashed color-mix(in srgb,var(--c) 30%,white);border-radius:var(--radius);background:color-mix(in srgb,var(--c) 4%,white);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;font-size:20px;line-height:26px;color:var(--muted)}
+.col .ghost .gi{color:color-mix(in srgb,var(--c) 60%,white);display:grid}
+
+/* ── Supply-chain arrows + bar ──────────────────────────────────────────── */
+#arrows{position:absolute;left:0;top:842px;overflow:visible}
+#arrows path{fill:none;stroke:var(--supply);stroke-linecap:round;stroke-linejoin:round}
+#arrows .base path{stroke-width:3.5}
+#arrows .base{opacity:.3}
+#arrows .hot path{stroke-width:6}
+#arrows .hot{opacity:0}
+#arrows .pk{fill:var(--supply)}
+#arrows .idlepk{animation:rise 3s ease-in-out infinite}
+#arrows .hotpk{opacity:0}
+@keyframes rise{0%{opacity:0;transform:translateY(0)}25%{opacity:.6}75%{opacity:.45}100%{opacity:0;transform:translateY(-46px)}}
+#bar{position:absolute;left:60px;top:912px;width:1800px;height:110px;padding:0 30px;display:flex;align-items:center;gap:20px;border-radius:16px;color:#fff;cursor:pointer;transition:box-shadow .6s ease;
+  background-color:var(--supply);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cpath d='M-8 8L8 -8M0 32L32 0M24 40L40 24' stroke='%23ffffff' stroke-opacity='.07' stroke-width='9'/%3E%3C/svg%3E")}
+#bar:focus{outline:none}
+#bar:focus-visible{outline:3px solid var(--text);outline-offset:4px}
+#bar .bi{width:58px;height:58px;border-radius:14px;display:grid;place-items:center;background:rgba(255,255,255,.16)}
+#bar .bt{font-size:34px;font-weight:900;letter-spacing:-.01em}
+#bar .bs{font-size:22px;opacity:.85;margin-top:6px}
+#bar .bo{margin-left:auto;font-size:22px;font-weight:800;padding:10px 22px;border:2.5px solid rgba(255,255,255,.7);border-radius:999px;transition:background-color .5s,color .5s}
+#bar.invite{box-shadow:0 0 0 8px color-mix(in srgb,var(--supply) 22%,transparent),0 14px 34px color-mix(in srgb,var(--supply) 40%,transparent)}
+#bar.invite .bo{background:#fff;color:var(--supply);border-color:#fff}
+
+/* ── Closing tagline ────────────────────────────────────────────────────── */
+#tagline{position:absolute;left:960px;top:644px;transform:translate(-50%,-50%);padding:0 64px 38px;background:var(--surface);border-radius:18px;box-shadow:var(--lift);font-size:54px;font-weight:900;letter-spacing:-.025em;white-space:nowrap;text-align:center;overflow:hidden;opacity:0;transition:opacity .7s ease;z-index:8}
+#tagline::before{content:"";display:block;height:22px;margin:0 -64px 30px;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3Crect width='11' height='11' fill='%230F172A'/%3E%3Crect x='11' y='11' width='11' height='11' fill='%230F172A'/%3E%3C/svg%3E") repeat-x}
+#tagline.show{opacity:1}
+#tagline .tw{display:inline-block}
+
+/* ── Supply-chain dialog ────────────────────────────────────────────────── */
+#backdrop{position:absolute;left:0;top:88px;width:1920px;height:992px;background:rgba(15,23,42,.38);opacity:0;pointer-events:none;transition:opacity 280ms ease;z-index:20}
+#dlg{position:absolute;left:115px;top:104px;width:1690px;height:950px;background:var(--surface);border-radius:18px;box-shadow:0 30px 80px rgba(15,23,42,.3);overflow:hidden;opacity:0;transform:scale(.55);transform-origin:845px 863px;pointer-events:none;transition:opacity 260ms ease,transform 320ms cubic-bezier(.2,.8,.2,1);z-index:21}
+#stage.open #backdrop{opacity:1;pointer-events:auto}
+#stage.open #dlg{opacity:1;transform:none;pointer-events:auto}
+#dhead{position:absolute;left:0;top:0;width:1690px;height:80px;display:flex;align-items:center;gap:16px;padding:0 24px 0 28px;border-bottom:1.5px solid var(--line)}
+#dmark{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;background:var(--supply);color:#fff}
+#dtitle{font-size:40px;font-weight:900;letter-spacing:-.02em}
+#dclose{margin-left:auto;width:52px;height:52px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--muted);display:grid;place-items:center;cursor:pointer}
+#dq{position:absolute;left:0;top:80px;width:372px;height:790px;padding:22px 24px;background:#F1F5F9;border-right:1.5px solid var(--line)}
+#dqlabel{font-size:24px;font-weight:900;letter-spacing:-.01em}
+.qr{position:absolute;left:24px;top:70px;width:324px;height:84px;padding:10px 14px 10px 12px;display:flex;gap:12px;align-items:center;background:var(--surface);border-radius:12px;border:2px solid transparent;box-shadow:inset 7px 0 0 var(--c),var(--shadow);
+  transition:transform .5s var(--ease),opacity .4s,background-color .45s,border-color .45s}
+.qr.hide{opacity:0}
+.qr .rk{flex:none;width:42px;height:30px;margin-left:6px;border-radius:7px;display:grid;place-items:center;background:var(--text);color:#fff;font-size:18px;font-weight:900}
+.qr .l1{display:flex;gap:10px;align-items:baseline;font-size:22px;line-height:28px;white-space:nowrap}
+.qr .l1 span{color:var(--muted);font-weight:600}
+.qr .l2{position:relative;height:26px;margin-top:2px;font-size:18px}
+.qr .l2 span{position:absolute;left:0;top:0;display:flex;gap:6px;align-items:center;white-space:nowrap;transition:opacity .4s}
+.qr .st{color:var(--muted)}
+.qr .ok{color:var(--ok);font-weight:900;opacity:0}
+.qr.onsite .st{opacity:0}
+.qr.onsite .ok{opacity:1}
+.qr.serve{border-color:var(--c);background:color-mix(in srgb,var(--c) 10%,white)}
+#cap{position:absolute;left:0;top:870px;width:1690px;height:80px;display:flex;align-items:center;gap:16px;padding:0 32px;border-top:1.5px solid var(--line);font-size:26px;font-weight:500;transition:opacity .3s}
+#cap .cd{flex:none;width:12px;height:30px;border-radius:6px;background:var(--supply)}
+#capText{display:inline-block}
+#dlg.nocap #cap{opacity:0}
+
+/* ── Network map ────────────────────────────────────────────────────────── */
+#map{position:absolute;left:372px;top:80px;width:1318px;height:790px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26'%3E%3Ccircle cx='13' cy='13' r='1.5' fill='%23D5DCE5'/%3E%3C/svg%3E")}
+#map > svg{position:absolute;left:0;top:0;overflow:visible}
+#mapLines path{fill:none;stroke:#B8C4D2;stroke-width:2}
+#mapLines .att{stroke:var(--supply);stroke-width:3;stroke-dasharray:.5 9;stroke-linecap:round;opacity:0;transition:opacity .35s}
+#mapLines .att.on{opacity:.9}
+#mapTop{z-index:3}
+#mapTop text{font-family:var(--font);font-size:18px;font-weight:800;fill:#fff}
+#route{fill:none;stroke-width:6;stroke-linecap:round;opacity:0}
+#dot{opacity:0;transition:opacity .25s}
+#dot.on{opacity:1}
+.ripple{fill:none;stroke-width:3;opacity:0;transform-box:fill-box;transform-origin:center}
+.node{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;gap:9px;background:var(--surface);border:2px solid color-mix(in srgb,var(--supply) 40%,white);border-radius:12px;font-size:20px;font-weight:800;white-space:nowrap;box-shadow:var(--shadow);z-index:2}
+.node .ni{color:var(--supply);display:grid}
+.node.central{flex-direction:column;gap:4px;font-size:25px;font-weight:900;background:var(--supply);border:none;color:#fff;box-shadow:0 12px 30px color-mix(in srgb,var(--supply) 35%,transparent)}
+.node.central .ni{color:#fff}
+.node.site{border-radius:50%;border:2px solid var(--faint);font-size:18px;color:var(--text);box-shadow:none;transition:border-color .45s,background-color .45s,color .45s}
+.node.site.hl{border-color:var(--c);background:var(--c);color:#fff}
+.node.site .sk{position:absolute;right:-9px;top:-9px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--ok);color:#fff;border:2.5px solid var(--surface);opacity:0;transition:opacity .35s}
+.node.site.got .sk{opacity:1}
+.node.factory{border-color:var(--text)}
+.node.factory .ni{color:var(--text)}
+.fdot{position:absolute;right:-10px;top:-10px;width:26px;height:26px;border-radius:50%;border:4px solid var(--surface);background:var(--low);opacity:0;transition:opacity .4s,background-color .45s}
+.fdot.low,.fdot.ok{opacity:1}
+.fdot.ok{background:var(--ok)}
+#vhead{position:absolute;font-size:20px;font-weight:900;color:var(--text);z-index:2}
+.vend{position:absolute;display:flex;align-items:center;gap:10px;padding:0 16px;background:var(--surface);border:2px solid color-mix(in srgb,var(--supply) 40%,white);border-radius:10px;font-size:20px;font-weight:800;z-index:2;transition:border-color .45s,background-color .45s,color .45s}
+.vend .ni{color:var(--supply);display:grid}
+.vend .vnote{margin-left:auto;font-size:18px;font-weight:600;color:var(--muted)}
+.vend.unv{opacity:.55;border:2px dashed var(--faint)}
+.vend.unv .ni{color:var(--faint)}
+.vend.chosen{border-color:var(--supply);background:var(--supply);color:#fff}
+.vend.chosen .ni{color:#fff}
+.badge{position:absolute;z-index:4;display:flex;align-items:center;gap:6px;height:38px;padding:0 15px;border-radius:999px;font-size:20px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums;
+  color:#fff;background:var(--ok);box-shadow:0 6px 16px rgba(15,23,42,.14);transition:opacity .35s,background-color .45s}
+.badge .n{font-weight:900;min-width:1.2em}
+.badge.low{background:var(--low)}
+.badge.hide{opacity:0}
+.badge .flag{position:absolute;left:100%;top:50%;margin-left:12px;transform:translateY(-50%);font-size:18px;font-weight:900;color:var(--low);opacity:0;white-space:nowrap}
+.badge.fl-left .flag{left:auto;right:100%;margin:0 12px 0 0}
+.badge.fl-below .flag{left:50%;top:100%;margin:6px 0 0;transform:translateX(-50%)}
+.agent{position:absolute;z-index:4;width:420px;display:flex;gap:14px;align-items:flex-start;padding:16px 18px;background:var(--surface);border:2px solid var(--line);border-radius:14px;box-shadow:var(--shadow);transition:box-shadow .45s,border-color .45s}
+.agent .av{flex:none;width:50px;height:50px;border-radius:50%;display:grid;place-items:center;color:#fff;background:var(--supply)}
+.agent .an{font-size:22px;font-weight:900;line-height:28px}
+.agent .as{font-size:22px;line-height:28px;margin-top:2px}
+.agent.glow{border-color:var(--supply);box-shadow:0 0 0 6px color-mix(in srgb,var(--supply) 16%,transparent),0 14px 34px color-mix(in srgb,var(--supply) 24%,transparent)}
+#fcall{position:absolute;z-index:4;width:262px;font-size:20px;line-height:26px}
+#fcall .fl{display:flex;gap:10px;margin-bottom:12px;opacity:0;transition:opacity .45s}
+#fcall .fl.on{opacity:1}
+#fcall .mk{flex:none;width:14px;height:14px;margin-top:6px;border-radius:50%;background:var(--low);transition:background-color .45s}
+#fcall .mk.ok{background:var(--ok)}
+#fcall .ck{flex:none;color:var(--ok);margin-top:2px;display:grid}
+#otag{position:absolute;z-index:4;transform:translate(-50%,-100%);display:flex;gap:6px;align-items:center;height:32px;padding:0 12px;border-radius:999px;font-size:18px;font-weight:800;color:#fff;background:var(--ok);white-space:nowrap;transition:opacity .45s}
+#otag.hide{opacity:0}
+#vcard{position:absolute;z-index:6;width:350px;padding:18px 20px 16px;background:var(--surface);border:2.5px solid var(--supply);border-radius:16px;box-shadow:var(--lift);transform-origin:70% 0;opacity:0;transform:translateY(-34px) scale(.94);transition:opacity .45s ease,transform .5s cubic-bezier(.2,.8,.2,1)}
+#vcard.show{opacity:1;transform:none}
+#vcard .vk{font-size:20px;font-weight:800;color:var(--muted)}
+#vcard .vq{font-size:28px;font-weight:900;margin-top:2px;letter-spacing:-.01em}
+#vcard .vn{font-size:22px}
+.vr{margin-top:10px;padding:8px 12px;border:2px solid var(--line);border-radius:10px;transition:opacity .4s,background-color .4s,border-color .4s}
+.vr .vh{display:flex;align-items:center;gap:8px;font-size:22px;font-weight:900;line-height:28px}
+.vr .nm{position:relative}
+.vr .nm::after{content:"";position:absolute;left:-4px;right:-4px;top:55%;height:3px;border-radius:2px;background:currentColor;transform:scaleX(0);transform-origin:left center;transition:transform .5s var(--ease)}
+.vr.shown.excluded .nm::after,.vr.shown.late .nm::after{transform:scaleX(1)}
+.vr .vm{margin-left:auto;display:none}
+.vr .vl{font-size:20px;line-height:25px;color:var(--muted);opacity:0;transition:opacity .4s}
+.vr.shown .vl{opacity:1}
+.vr.excluded.shown{opacity:.45;border-style:dashed}
+.vr.late.shown{opacity:.7}
+.vr.choice.shown{border-color:var(--supply);background:var(--supply);color:#fff}
+.vr.choice.shown .vl{color:#fff;font-weight:800}
+.vr.choice.shown .vm{display:grid}
+#vpo{display:flex;gap:8px;align-items:flex-start;margin-top:12px;padding:8px 12px;border:2.5px solid var(--ok);border-radius:10px;font-size:20px;line-height:25px;font-weight:800;color:var(--ok);opacity:0;transition:opacity .3s}
+#vpo.shown{opacity:1}
+#vpo .ck{flex:none;margin-top:1px;display:grid}
+
+/* ── Closing pages: model results and agent flow ───────────────────────── */
+.page{position:absolute;left:0;top:88px;width:1920px;height:992px;background:var(--bg);z-index:25;opacity:0;translate:0 28px;pointer-events:none;transition:opacity .5s ease,translate .6s cubic-bezier(.2,.8,.2,1)}
+.page.on{opacity:1;translate:0 0;pointer-events:auto}
+.tone-ink{--c:var(--text)} .tone-maint{--c:var(--maint)} .tone-prev{--c:var(--prev)} .tone-supply{--c:var(--supply)}
+.phead{position:absolute;left:72px;top:118px;display:flex;align-items:center;gap:24px}
+.pic{width:76px;height:76px;border-radius:18px;display:grid;place-items:center;color:#fff;background:var(--c)}
+.phead h1{margin:0;font-size:54px;line-height:62px;font-weight:900;letter-spacing:-.025em}
+#mtable{position:absolute;left:72px;top:244px;width:1776px}
+.mh,.mrow{display:grid;grid-template-columns:420px 1fr 230px;gap:48px;align-items:center}
+.mh{padding-bottom:14px;border-bottom:3px solid var(--text);font-size:22px;font-weight:800;color:var(--muted)}
+.mh span:last-child,.mval{text-align:right}
+.mrow{height:116px;border-bottom:1.5px solid var(--line);opacity:.3;transition:opacity .4s ease}
+.mrow.on{opacity:1}
+.mname{font-size:32px;font-weight:700;letter-spacing:-.01em}
+.mtrack{display:block;height:26px;border-radius:13px;background:var(--track);overflow:hidden}
+.mfill{display:block;height:100%;width:0;border-radius:0 4px 4px 0;background:var(--text);transition:width 1s cubic-bezier(.2,.8,.2,1)}
+.mrow.on .mfill{width:var(--v)}
+.mval{font-size:52px;font-weight:900;letter-spacing:-.02em;font-variant-numeric:tabular-nums;opacity:0;transition:opacity .3s}
+.mrow.on .mval{opacity:1}
+#fq{position:absolute;left:72px;top:150px;height:96px;display:flex;align-items:center;gap:22px}
+.who{display:flex;align-items:center;gap:10px;height:56px;padding:0 22px 0 9px;border-radius:999px;background:var(--text);color:#fff;font-size:24px;font-weight:800;white-space:nowrap}
+.who .wi{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.14)}
+#fqb{position:relative;margin-left:8px;padding:16px 34px;background:var(--surface);border-radius:16px;box-shadow:var(--lift);font-size:48px;line-height:60px;font-weight:900;letter-spacing:-.02em;white-space:nowrap;opacity:0;scale:.9;transform-origin:0 50%;transition:opacity .35s ease,scale .45s cubic-bezier(.2,.8,.2,1)}
+#fqb::before{content:"";position:absolute;left:-9px;top:50%;width:18px;height:18px;background:var(--surface);transform:translateY(-50%) rotate(45deg);border-radius:3px}
+#fq.on #fqb{opacity:1;scale:1}
+#fqText{display:inline-block}
+.fst{position:absolute;top:406px;width:396px;height:400px;padding:26px 30px;background:var(--surface);border-radius:16px;border-top:10px solid var(--c);box-shadow:var(--shadow);opacity:0;translate:0 30px;transition:opacity .45s ease .3s,translate .55s cubic-bezier(.2,.8,.2,1) .3s}
+.fst.on{opacity:1;translate:0 0}
+.fst .fi{width:64px;height:64px;border-radius:16px;display:grid;place-items:center;color:#fff;background:var(--c)}
+.fst h3{margin:22px 0 12px;font-size:34px;line-height:40px;font-weight:900;letter-spacing:-.015em;text-wrap:balance}
+.fst p{margin:0;font-size:26px;line-height:34px;color:var(--muted)}
+.fnum{position:absolute;top:-40px;left:0;height:30px;padding:0 12px;display:flex;align-items:center;border-radius:6px 6px 0 0;background:var(--text);color:#fff;font-size:18px;font-weight:900}
+.farr{position:absolute;overflow:visible}
+.farr path{fill:none;stroke:var(--text);stroke-width:4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:140;stroke-dashoffset:140;transition:stroke-dashoffset .35s ease}
+.farr.on path{stroke-dashoffset:0}
+.inode{position:absolute;padding:20px 26px;background:var(--surface);border-radius:16px;border-top:10px solid var(--c);box-shadow:var(--shadow);opacity:0;translate:0 24px;transition:opacity .45s ease .3s,translate .55s cubic-bezier(.2,.8,.2,1) .3s}
+.inode.on{opacity:1;translate:0 0}
+.inode .ih{display:flex;align-items:center;gap:14px}
+.inode .tile{flex:none;width:52px;height:52px;border-radius:14px;display:grid;place-items:center;color:#fff;background:var(--c)}
+.inode .ik{font-size:20px;font-weight:800;color:var(--c)}
+.inode h3{margin:14px 0 6px;font-size:30px;line-height:36px;font-weight:900;letter-spacing:-.015em}
+.inode p{margin:0;font-size:22px;line-height:30px;color:var(--muted)}
+#iotSvg{position:absolute;left:0;top:0;overflow:visible}
+#iotSvg .conn{fill:none;stroke:var(--text);stroke-width:4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:700;stroke-dashoffset:700;transition:stroke-dashoffset .45s ease}
+#iotSvg .conn.on{stroke-dashoffset:0}
+#iotSvg .motion{fill:none;stroke:none}
+#iotSvg .pkt{fill:var(--text);opacity:0}
+
+/* ── Presenter extras ───────────────────────────────────────────────────── */
+#hint,#toast{position:absolute;right:28px;bottom:18px;font-size:18px;color:var(--faint);transition:opacity .6s;z-index:40}
+#hint.gone{opacity:0}
+#toast{opacity:0}
+#toast.on{opacity:1}
+#notes{position:absolute;left:60px;bottom:180px;width:860px;padding:18px 22px;background:var(--surface);border:1.5px solid var(--line);border-radius:12px;box-shadow:0 20px 50px rgba(15,23,42,.2);font-size:20px;line-height:1.35;z-index:50;display:none}
+#notes.on{display:block}
+#notes .nh{font-size:18px;font-weight:700;color:var(--muted)}
+#notes .nc{font-weight:800;margin-top:6px}
+#notes .ns{margin-top:8px}
+
+/* ── Reduced motion: fade instead of fly ────────────────────────────────── */
+@media (prefers-reduced-motion: reduce){
+  .card{transition:opacity 400ms ease,background-color 450ms ease}
+  #dlg,#vcard{transform:none!important}
+  #arrows .idlepk{animation:none;opacity:0}
+  .typing i{animation:none;opacity:.6}
+}
+</style>
+</head>
+<body>
+<div id="stage">
+  <header id="hdr">
+    <div id="brand"><svg id="brandMark" viewBox="0 0 30 30"></svg><span id="brandName"></span></div>
+    <div id="hdrR">
+      <div id="clockWrap"><div id="clock"><span id="cDay"></span><span id="cSep">·</span><span id="cTime"></span></div></div>
+      <div id="dots"></div>
+      <div id="rdots"></div>
+      <button id="resBtn" class="hbtn" type="button"></button>
+      <button id="resetBtn" class="hbtn" type="button" aria-label="Reset to the start"></button>
+    </div>
+  </header>
+
+  <div id="track"></div>
+  <div id="qhead">
+    <span id="qlabel"></span>
+    <div id="qagent"><span class="bot" id="qbot"></span><span id="qname"></span></div>
+    <div id="bubble"><span id="bubbleText"></span></div>
+  </div>
+  <svg id="startline" width="16" height="210"></svg>
+  <div id="slots"></div>
+  <div id="more"></div>
+  <div id="tag"><span id="tagIcon"></span><span id="tagText"></span></div>
+
+  <div id="cols"></div>
+  <svg id="arrows" width="1920" height="72"></svg>
+  <div id="bar" role="button" tabindex="0"><span class="bi" id="barIcon"></span><span class="bt" id="barTitle"></span><span class="bs" id="barSub"></span><span class="bo" id="barOpen"></span></div>
+  <div id="cardLayer"></div>
+  <div id="tagline"></div>
+
+  <div id="backdrop"></div>
+  <div id="dlg" role="dialog" aria-modal="true">
+    <div id="dhead"><span id="dmark"></span><div id="dtitle"></div><button id="dclose" aria-label="Close"></button></div>
+    <div id="dq"><div id="dqlabel"></div></div>
+    <div id="map">
+      <svg id="mapLines" width="1318" height="790"></svg>
+      <svg id="mapTop" width="1318" height="790"></svg>
+    </div>
+    <div id="cap"><span class="cd"></span><span id="capText"></span></div>
+  </div>
+
+  <div id="notes"><div class="nh" id="notesH"></div><div class="nc" id="notesC"></div><div class="ns" id="notesS"></div></div>
+  <div id="hint"></div>
+  <div id="toast"></div>
+</div>
+
+<script>
+'use strict';
+/* ══════════════════════════════════════════════════════════════════════════
+   1. SCENARIO — every name, number and on-screen sentence lives here.
+      Edit freely; the queue order, stock arithmetic and vendor choice are
+      computed from these values.
+   ══════════════════════════════════════════════════════════════════════════ */
+const SCENARIO = {
+  product: 'PitCrew',
+  tagline: 'Every task, every part — ready before it’s needed.',   // closing frame (placeholder)
+
+  // Queue rule: earlier in this list = higher priority. Within a type, earlier due date first.
+  priority: ['cure', 'prevention', 'maintenance'],
+
+  // The three sources, in on-screen order (left → right). `watching` fills the empty bay.
+  types: {
+    maintenance: { label:'MAINTENANCE', title:'Maintenance', subtitle:'routine, from rated life',
+                   source:'Lifeline model — rated life from each part’s datasheet', icon:'wrench',
+                   watching:'Tracking the rated life of every deployed part' },
+    prevention:  { label:'PREVENTION', title:'Prevention', subtitle:'predicted failure',
+                   source:'Failure-prediction model', icon:'pulse',
+                   watching:'Watching product health for early warning signs' },
+    cure:        { label:'CURE', title:'Cure', subtitle:'something is down',
+                   source:'Incident response — disasters, outages, force majeure', icon:'alert',
+                   watching:'Standing by for outages at customer sites' },
+  },
+
+  parts: {
+    'PN-1043': 'Cooling fan module',
+    'PN-2210': 'Power supply board',
+    'PN-3307': 'Sensor module',
+    'PN-4518': 'Controller board',
+  },
+
+  network: {
+    central: 'Central hub',
+    factory: 'Factory',
+    hubs: {                       // id: { name, customer sites served by this hub }
+      north: { name:'Local hub North', sites:['N1','N2'] },
+      east:  { name:'Local hub East',  sites:['E1','E2'] },
+      south: { name:'Local hub South', sites:['S1','S2'] },
+      west:  { name:'Local hub West',  sites:['W1','W2'] },
+    },
+  },
+
+  // Stock — only these appear on screen. Key = "<location>|<part number>".
+  stock: {
+    'south|PN-2210':   { start:2,  reorder:2,  target:4  },
+    'east|PN-1043':    { start:0,  reorder:1,  target:3  },
+    'central|PN-1043': { start:15, reorder:10, target:20 },
+    'central|PN-2210': { start:11, reorder:10, target:20 },
+  },
+  // When a badge turns amber: 'below' the reorder level (matches the script: South 2 → 1 turns amber)
+  // or 'atOrBelow'.
+  lowRule: 'below',
+
+  // Tasks. due = ISO date used for ordering within a type.
+  tasks: {
+    'MNT-198': { type:'maintenance', part:'PN-3307', site:'E2', reason:'Rated 20,000 h · now at 18,900 h', due:'2026-11-06' },
+    'MNT-199': { type:'maintenance', part:'PN-1043', site:'S1', reason:'Rated 3 years · installed Nov 2023', due:'2026-11-09' },
+    'MNT-200': { type:'maintenance', part:'PN-2210', site:'N1', reason:'Rated 50,000 h · now at 47,800 h', due:'2026-11-12' },
+    'MNT-201': { type:'maintenance', part:'PN-3307', site:'W1', reason:'Rated 20,000 h · now at 18,600 h', due:'2026-11-14' },
+    'MNT-202': { type:'maintenance', part:'PN-4518', site:'N2', reason:'Rated 5 years · installed Nov 2021', due:'2026-11-20' },
+    'PRV-031': { type:'prevention',  part:'PN-1043', site:'E1', reason:'Failure predicted in 5 days (80%)', due:'2026-10-28' },
+    'CUR-007': { type:'cure',        part:'PN-2210', site:'S2', reason:'Storm power surge · line down',     due:'2026-10-23' },
+  },
+  initialQueue: ['MNT-198', 'MNT-199', 'MNT-200'],
+
+  // Vendors. Total = unit × order quantity; arrival = order date + lead days (both computed).
+  vendors: [
+    { id:'A', name:'Vendor A', verified:true,  unit:38, leadDays:13 },
+    { id:'B', name:'Vendor B', verified:true,  unit:46, leadDays:4  },
+    { id:'C', name:'Vendor C', verified:true,  unit:41, leadDays:7  },
+    { id:'D', name:'Vendor D', verified:false, unit:31, leadDays:5  },
+  ],
+  // Order quantity = central target − central stock at that moment (20 − 8 = 12).
+  order:  { part:'PN-2210', at:'central', orderedOn:'2026-10-23', needBy:'2026-11-02', po:'PO-7711' },
+  policy: { autoApproveUpTo:500 },
+
+  factoryEvent: {
+    alert:  'Test station T-4: vibration rising, ~30 h to failure',
+    fix:    'Fix booked in tonight’s planned downtime, 02:00–04:00',
+    output: 'Output on plan',
+  },
+
+  // Resources mode (press M or click Resources): pages shown in this order.
+  resources: ['iot', 'metrics', 'flow'],
+
+  // Resources · how sensor data reaches Maintenance and Prevention. Node ids are fixed; edit the text.
+  iot: {
+    title:'From sensor data to tasks',
+    nodes:[
+      { id:'parts', kicker:'Customer sites', title:'Deployed parts', text:'Sensors on every deployed part report run hours and health readings', icon:'chip', tone:'ink' },
+      { id:'iot',   kicker:'Ingest', title:'AWS IoT Core', text:'Collects device data securely and in real time', icon:'cloud', tone:'ink' },
+      { id:'maint', kicker:'Maintenance', title:'Lifeline model', text:'Compares hours in service with each part’s rated life', icon:'wrench', tone:'maint' },
+      { id:'prev',  kicker:'Prevention', title:'Failure-prediction model', text:'XGBoost spots the patterns that come before a failure', icon:'pulse', tone:'prev' },
+      { id:'queue', kicker:'Tasks', title:'Priority queue', text:'Routine work by due date; predicted failures move ahead', icon:'list', tone:'ink' },
+    ],
+    say:'Sensors on deployed parts stream into AWS IoT Core. That feeds two models: the Lifeline model compares run hours with rated life for maintenance, and the XGBoost failure-prediction model flags failures before they happen. Both turn into tasks in the priority queue.',
+  },
+  // Resources · model results (text and numbers exactly as the team supplied them).
+  results: {
+    title:'Failure-prediction model', head:['Metric', 'Result'],
+    rows:[ ['Accuracy', '95.55%'], ['Failure precision', '42.4%'], ['Failure recall', '86.8%'], ['Failure F1-score', '57.0%'], ['PR-AUC', '79.7%'] ],
+    say:'Our failure-prediction model: it catches 86.8% of real failures (recall), and 42.4% of its failure alerts are real failures (precision). Accuracy 95.55%, F1 57.0%, PR-AUC 79.7%.',
+  },
+  flow: {                         // tone: 'ink' | 'prev' | 'supply'  ·  n = step number shown on a tab
+    asker:'Factory manager', question:'Which spare parts should we order?',
+    stages:[
+      { title:'Amazon Bedrock — Nova Micro', text:'Understands the request and selects the appropriate tools', icon:'spark', tone:'ink' },
+      { n:1, title:'Calls Prediction Agent', text:'Python executes XGBoost and returns high-risk records', icon:'pulse', tone:'prev' },
+      { n:2, title:'Calls Order Agent', text:'Python checks inventory and calculates draft orders', icon:'truck', tone:'supply' },
+      { n:3, title:'Bedrock generates the explanation', text:'Summarizes machine risks, purchasing needs, and required approvals', icon:'doc', tone:'ink' },
+    ],
+    say:'A factory manager asks which spare parts to order. Bedrock (Nova Micro) picks the tools: the Prediction Agent runs XGBoost to return high-risk records, the Order Agent checks inventory and drafts orders, then Bedrock explains the risks, purchases and approvals needed.',
+  },
+
+  labels: {
+    queue:'Priority queue', queueAgent:'Queue agent', slot:'P',
+    bar:'Manufacturing & Supply Chain', barSub:'supports all three', barOpen:'Open ↗',
+    dialog:'Manufacturing & Supply Chain', vendors:'Verified vendors',
+    sourcing:'Sourcing agent', fab:'Internal Fabrication agent',
+    partOnSite:'part on site', notInStock:'not in stock', notVerified:'not verified',
+    order:'Order', needBy:'need by', hint:'→ next · ← back',
+    resources:'Resources', backToShow:'Back to show', reset:'Reset',
+  },
+  // What the agents and dialog caption say before anything has happened.
+  idle: {
+    sourcing:'Watching stock at every hub.',
+    fab:'Watching our factory machines.',
+    caption:'Our hubs, factory and verified vendors back every task in the queue.',
+  },
+
+  // Per-step text. clock: 'Day · HH:MM' (or just 'Day'); null = unchanged.
+  // queue = Queue agent bubble · caption = dialog caption · sourcing / fab = agent status
+  // say = speaker notes (press N).
+  script: [
+    /* 0 */ { clock:'Fri Oct 23 · 10:00', queue:'Routine work, ordered by due date.',
+              say:'PitCrew keeps every part we’ve deployed working from one priority queue. Right now it holds routine work, ordered by due date.' },
+    /* 1 */ { clock:'Fri Oct 23 · 10:05', queue:'New lifeline tasks, added by due date.',
+              say:'The Lifeline model knows every deployed part, its datasheet and rated life, so it schedules maintenance ahead of time.' },
+    /* 2 */ { clock:'Fri Oct 23 · 11:40', queue:'Predicted failure outranks routine maintenance.',
+              say:'The failure-prediction model flags the cooling fan at Site E1: 80% likely to fail within 5 days. That jumps ahead of routine work.' },
+    /* 3 */ { clock:'Fri Oct 23 · 13:15', queue:'Cure outranks everything: a customer is down.', tag:'Mobilising Local hub South',
+              say:'A storm causes a power surge at Site S2 and the line is down. Cure goes straight to pole position and the nearest hub is mobilised.' },
+    /* 4 */ { clock:'Fri Oct 23 · 13:16',
+              say:'None of this works without the right part in the right place. Manufacturing and supply chain support all three. Let’s open it.' },
+    /* 5 */ { clock:'Fri Oct 23 · 13:16', caption:'Cure first: Local hub South sends the power supply board to Site S2.',
+              sourcing:'Watching stock for PN-2210.',
+              say:'Cure is served first: the nearest hub ships the power supply board straight to the site.' },
+    /* 6 */ { clock:'Fri Oct 23 · 13:30', caption:'Local hub East didn’t have the fan module, so the central hub sent it — plus 2 spares for future jobs.',
+              sourcing:'Local hub East had none: central sent 3.',
+              say:'For the predicted failure, East had no fan module, so the central hub sent three: one for this job, two spares.' },
+    /* 7 */ { clock:'Fri Oct 23 · 13:45', caption:'The central hub restocks the local hub so it’s ready for the next job.',
+              sourcing:'Restocked South. Central is low on PN-2210.',
+              say:'South is now below its reorder level, so the central hub tops it up — which leaves the central hub low.' },
+    /* 8 */ { clock:'Fri Oct 23 · 13:50', caption:'The Sourcing agent checks only verified vendors and picks the cheapest one that still arrives in time.',
+              sourcing:'Vendor C: cheapest that arrives in time.',
+              say:'Only verified vendors count. A is cheapest but late, B is fastest but costs more, C is the cheapest that arrives in time — and it is under the auto-approval limit.' },
+    /* 9 */ { clock:'Fri Oct 30', caption:'A week later the order arrives, and the central hub is back to full stock.',
+              sourcing:'Central hub restocked: 20 PN-2210.',
+              say:'A week later the order lands and the central hub is back to full stock.' },
+    /* 10 */ { clock:'Fri Oct 30 · 16:00', caption:'Inside our own factory, the Internal Fabrication agent fixes machine issues before they stop production.',
+              fab:'T-4 fixed in planned downtime. Output on plan.',
+              say:'Inside our own factory, a test station is drifting. The fix goes into tonight’s planned downtime, so output stays on plan.' },
+    /* 11 */ { clock:null, say:'Back to the queue.' },
+    /* 12 */ { clock:null, queue:'Customer back up. Failure prevented.',
+              done:{ 'CUR-007':'Back up in 4 h', 'PRV-031':'Replaced before it failed' },
+              say:'The customer at S2 is back up in four hours, and the fan at E1 was replaced before it failed.' },
+    /* 13 */ { clock:null, say:'Every task, every part — ready before it’s needed.' },
+  ],
+};
+
+/* ══════════════════════════════════════════════════════════════════════════
+   2. STEPS — the show. One entry per key press.
+      Each step = { clock, beats }. Beats run one after another, and each beat
+      moves exactly one thing. Beat types (defined in BEATS below):
+        appear{task}        the source model "thinks", then a task card emerges in its bay
+        arrow{task}         a part packet rises from the supply bar into that bay
+        redPulse{task}      single red pulse + shake on a card
+        toQueue{task}       others slide to make room, then the card arcs up into its grid slot
+        qcap{text}          Queue agent "types", then shows this sentence
+        tag{task,text}      small tag beside a grid slot
+        arrowsInTurn / arrowsTogether / invite / closing
+        dialog{open}        open/close the supply-chain dialog (grows from the bar)
+        caption{text}       dialog caption
+        serve{task}         highlight the task being served (null = none)
+        badges{show:[keys]} which stock badges are visible
+        flash{key,text}     brief flashing note beside a badge
+        ship{from,to,part,qty,urgent}   one shipment; qty may be 'toTarget' or 'order'
+        onSite{task}        "part on site" tick
+        agent{who,status,glow,focus}    who: 'sourcing' | 'fab'
+        vendorCard{show} / decide        vendor comparison card
+        factory{set:{dot,alert,fix,output}}
+        complete{task,text} / lift{task}
+   ══════════════════════════════════════════════════════════════════════════ */
+const T = SCENARIO.script;
+const STEPS = [
+  /* 0 — opening state */
+  { clock:T[0].clock, beats:[ {t:'qcap', text:T[0].queue} ] },
+
+  /* 1 — Maintenance: two lifeline tasks join by due date */
+  { clock:T[1].clock, beats:[
+    {t:'appear', task:'MNT-201'}, {t:'arrow', task:'MNT-201'}, {t:'toQueue', task:'MNT-201'},
+    {t:'qcap', text:T[1].queue},
+    {t:'appear', task:'MNT-202'}, {t:'arrow', task:'MNT-202'}, {t:'toQueue', task:'MNT-202'} ] },
+
+  /* 2 — Prevention: predicted failure takes P1 */
+  { clock:T[2].clock, beats:[
+    {t:'appear', task:'PRV-031'}, {t:'arrow', task:'PRV-031'}, {t:'toQueue', task:'PRV-031'},
+    {t:'qcap', text:T[2].queue} ] },
+
+  /* 3 — Cure: customer down, straight to the top */
+  { clock:T[3].clock, beats:[
+    {t:'appear', task:'CUR-007'}, {t:'redPulse', task:'CUR-007'}, {t:'arrow', task:'CUR-007'},
+    {t:'toQueue', task:'CUR-007'}, {t:'qcap', text:T[3].queue}, {t:'tag', task:'CUR-007', text:T[3].tag} ] },
+
+  /* 4 — Supply chain supports all three */
+  { clock:T[4].clock, beats:[ {t:'arrowsInTurn'}, {t:'invite'} ] },
+
+  /* 5 — Dialog: cure shipment from Local hub South */
+  { clock:T[5].clock, beats:[
+    {t:'dialog', open:true}, {t:'caption', text:T[5].caption}, {t:'serve', task:'CUR-007'},
+    {t:'badges', show:['south|PN-2210']},
+    {t:'ship', from:'south', to:'S2', part:'PN-2210', qty:1, urgent:true},
+    {t:'onSite', task:'CUR-007'},
+    {t:'agent', who:'sourcing', status:T[5].sourcing} ] },
+
+  /* 6 — Prevention: East has none, central sends 3 */
+  { clock:T[6].clock, beats:[
+    {t:'caption', text:T[6].caption}, {t:'serve', task:'PRV-031'},
+    {t:'badges', show:['east|PN-1043']}, {t:'flash', key:'east|PN-1043', text:SCENARIO.labels.notInStock},
+    {t:'agent', who:'sourcing', glow:true, focus:'east'},
+    {t:'badges', show:['east|PN-1043', 'central|PN-1043']},
+    {t:'ship', from:'central', to:'east', part:'PN-1043', qty:'toTarget'},
+    {t:'agent', who:'sourcing', status:T[6].sourcing},
+    {t:'ship', from:'east', to:'E1', part:'PN-1043', qty:1},
+    {t:'onSite', task:'PRV-031'} ] },
+
+  /* 7 — Central restocks Local hub South */
+  { clock:T[7].clock, beats:[
+    {t:'caption', text:T[7].caption}, {t:'serve', task:null},
+    {t:'badges', show:['south|PN-2210', 'central|PN-2210']},
+    {t:'agent', who:'sourcing', glow:true, focus:'south'},
+    {t:'ship', from:'central', to:'south', part:'PN-2210', qty:'toTarget'},
+    {t:'agent', who:'sourcing', status:T[7].sourcing} ] },
+
+  /* 8 — Vendor choice */
+  { clock:T[8].clock, beats:[
+    {t:'caption', text:T[8].caption}, {t:'badges', show:['central|PN-2210']},
+    {t:'agent', who:'sourcing', focus:'vendors'},
+    {t:'vendorCard', show:true}, {t:'decide'},
+    {t:'agent', who:'sourcing', status:T[8].sourcing} ] },
+
+  /* 9 — A week later: order arrives */
+  { clock:T[9].clock, beats:[
+    {t:'caption', text:T[9].caption}, {t:'vendorCard', show:false},
+    {t:'ship', from:'chosenVendor', to:'central', part:'PN-2210', qty:'order'},
+    {t:'agent', who:'sourcing', status:T[9].sourcing} ] },
+
+  /* 10 — Internal fabrication */
+  { clock:T[10].clock, beats:[
+    {t:'caption', text:T[10].caption}, {t:'badges', show:[]},
+    {t:'agent', who:'sourcing', glow:false, focus:null},
+    {t:'agent', who:'fab', glow:true, focus:'factory'},
+    {t:'factory', set:{dot:'low', alert:true}},
+    {t:'factory', set:{fix:true}},
+    {t:'factory', set:{dot:'ok'}},
+    {t:'factory', set:{output:true}},
+    {t:'agent', who:'fab', status:T[10].fab} ] },
+
+  /* 11 — Close the dialog */
+  { clock:T[11].clock, beats:[ {t:'dialog', open:false} ] },
+
+  /* 12 — Tasks complete and leave the queue */
+  { clock:T[12].clock, beats:[
+    {t:'complete', task:'CUR-007', text:T[12].done['CUR-007']}, {t:'qcap', text:T[12].queue},
+    {t:'lift', task:'CUR-007'},
+    {t:'complete', task:'PRV-031', text:T[12].done['PRV-031']}, {t:'lift', task:'PRV-031'} ] },
+
+  /* 13 — Closing frame */
+  { clock:T[13].clock, beats:[ {t:'arrowsTogether'}, {t:'closing'} ] },
+];
+
+/* ══════════════════════════════════════════════════════════════════════════
+   3. ENGINE — you should not need to edit below this line to change the story.
+   ══════════════════════════════════════════════════════════════════════════ */
+const ICONS = {
+  wrench:'<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3.6 17.4a1.9 1.9 0 0 0 2.7 2.7l5.7-5.7a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/>',
+  pulse:'<path d="M2.5 12h4.2l2.4-6 4.2 12 2.4-6h5.8"/>',
+  alert:'<path d="M10.3 3.9 2.4 17.6a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v4.3"/><path d="M12 17.1h.01"/>',
+  hub:'<path d="M3 20V9.5L12 4l9 5.5V20"/><path d="M7 20v-7h10v7"/><path d="M7 16.5h10"/>',
+  factory:'<path d="M2.5 20.5h19"/><path d="M4 20.5V11l5 3v-3l5 3V5.5h4.5v15"/><path d="M7.5 17.5h1.5M12 17.5h1.5"/>',
+  truck:'<path d="M2.5 6.5h11V16h-11z"/><path d="M13.5 9.5h4l3 3.2V16h-7"/><circle cx="6.5" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
+  bot:'<rect x="4.5" y="8" width="15" height="11" rx="3.5"/><path d="M12 4.6V8"/><circle cx="12" cy="3.6" r="1"/><path d="M9.3 13.2h.01M14.7 13.2h.01"/><path d="M2.5 12.5V15M21.5 12.5V15"/>',
+  spark:'<path d="M12 3.5l1.9 5.2 5.2 1.9-5.2 1.9-1.9 5.2-1.9-5.2-5.2-1.9 5.2-1.9z"/>',
+  check:'<path d="M4.5 12.5l4.8 4.8L19.5 7"/>',
+  shield:'<path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.2-7.5 9.5-4.3-1.3-7.5-4.9-7.5-9.5V6z"/><path d="M8.7 12.2l2.3 2.3 4.4-4.6"/>',
+  close:'<path d="M6 6l12 12M18 6 6 18"/>',
+  user:'<circle cx="12" cy="8" r="3.6"/><path d="M4.8 20.5c.6-3.8 3.6-6.3 7.2-6.3s6.6 2.5 7.2 6.3"/>',
+  doc:'<path d="M6.5 3h7.5l4 4v14h-11.5z"/><path d="M14 3v4h4"/><path d="M9.5 12h5M9.5 15.5h5"/>',
+  reset:'<path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4v5h5"/>',
+  chip:'<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M9.5 3v4M14.5 3v4M9.5 17v4M14.5 17v4M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4"/>',
+  cloud:'<path d="M7.5 18.5h9.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 9.6a4.5 4.5 0 0 0 1.4 8.9z"/>',
+  list:'<path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.5" cy="6.5" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="17.5" r="1.2"/>',
+  eye:'<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/>',
+};
+const icon = (n, size=24, sw=2) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const rich = s => esc(s).replace(/\b(?:PN|PO|MNT|PRV|CUR)-\d+\b/g, '<span class="nb">$&</span>');
+const $ = s => document.querySelector(s);
+const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const sv = (tag, attrs) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+const easeInOut = t => t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
+const clone = o => JSON.parse(JSON.stringify(o));
+const TASK = id => SCENARIO.tasks[id];
+const TYPES = Object.keys(SCENARIO.types);
+const TYPEVAR = { maintenance:'--maint', prevention:'--prev', cure:'--cure' };
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const DEBUG = /debug/.test(location.hash);
+const CANCEL = Symbol('cancel');
+const GAP = 220;                                   // pause between beats (ms)
+const HOLD = 10000, REST = 2500, FIRST = 6000;     // autoplay timing (ms)
+
+/* ── Layout (stage pixels at 1920×1080) ─────────────────────────────────── */
+const L = { pad:72, cardW:262, cardH:210, slotGap:16, slots:6, rowTop:180, colLeft:60, colTop:456, colH:386, colW:573, colGap:40 };
+const colX = type => L.colLeft + TYPES.indexOf(type) * (L.colW + L.colGap);
+const slotX = i => L.pad + i * (L.cardW + L.slotGap);
+const colCardPos = type => ({ x: colX(type) + (L.colW - L.cardW) / 2, y: L.colTop + L.colH - L.cardH - 10 });
+
+/* Map geometry, in map coordinates (map area is 1318 × 790 inside the dialog). */
+const MAP = {
+  fab:      { x:20,  y:18 },  sourcing:{ x:878, y:18 },          // agent cards (420 wide)
+  factory:  { cx:140, cy:440, w:220, h:84 },
+  central:  { cx:625, cy:440, w:250, h:112 },
+  hubW:220, hubH:60,
+  hubs:     { north:{cx:420,cy:275}, east:{cx:830,cy:275}, west:{cx:420,cy:605}, south:{cx:830,cy:605} },
+  siteR:24, siteDX:80, siteTopY:178, siteBotY:705,
+  vendors:  { x:1000, y:343, w:298, h:48, gap:8, headY:308 },
+  vcard:    { x:948, y:152 },
+  fcall:    { x:20, y:500 },
+};
+
+/* ── Helpers: colours, dates, money, queue, vendors ─────────────────────── */
+const CSSV = {};
+const cssHex = v => CSSV[v] || (CSSV[v] = getComputedStyle(document.documentElement).getPropertyValue(v).trim());
+function rgba(v, a){
+  const hex = cssHex(v).replace('#', ''), n = parseInt(hex.length === 3 ? hex.replace(/./g, '$&$&') : hex, 16);
+  return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`;
+}
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const isoDate = s => { const [y,m,d] = s.split('-').map(Number); return new Date(Date.UTC(y, m-1, d)); };
+const addDays = (d, n) => new Date(d.getTime() + n * 864e5);
+const fmtDate = (d, dow) => (dow ? DOW[d.getUTCDay()] + ' ' : '') + MON[d.getUTCMonth()] + ' ' + d.getUTCDate();
+const money = n => '$' + n.toLocaleString('en-US');
+const parseClock = s => { if (!s) return null; const [day, time] = s.split(' · '); return { day, time: time || null }; };
+function clockDate(day){       // 'Fri Oct 30' → Date (year from the order date)
+  const [, mon, d] = day.split(' '), y = Number(SCENARIO.order.orderedOn.slice(0, 4)), m = MON.indexOf(mon);
+  return m < 0 ? null : new Date(Date.UTC(y, m, Number(d)));
+}
+
+function queueOrder(s){
+  const rank = id => SCENARIO.priority.indexOf(TASK(id).type);
+  return [...s.queue].sort((a, b) => rank(a) - rank(b) || TASK(a).due.localeCompare(TASK(b).due) || a.localeCompare(b));
+}
+function isLow(key, v){ const r = SCENARIO.stock[key].reorder; return SCENARIO.lowRule === 'atOrBelow' ? v <= r : v < r; }
+function orderNeed(s){ const k = SCENARIO.order.at + '|' + SCENARIO.order.part; return SCENARIO.stock[k].target - s.stock[k]; }
+
+/* Vendor decision: verified only; cheapest that arrives by the need-by date. */
+function analyse(qty){
+  const O = SCENARIO.order, need = isoDate(O.needBy), ordered = isoDate(O.orderedOn), limit = SCENARIO.policy.autoApproveUpTo;
+  const vs = SCENARIO.vendors.map(v => ({ ...v, total: v.unit * qty, arrives: addDays(ordered, v.leadDays) }));
+  const ok = vs.filter(v => v.verified);
+  const cheapest = Math.min(...ok.map(v => v.total)), fastest = Math.min(...ok.map(v => v.leadDays));
+  const inTime = ok.filter(v => v.arrives <= need).sort((a, b) => a.total - b.total || a.leadDays - b.leadDays);
+  const choice = inTime[0] || ok.slice().sort((a, b) => a.leadDays - b.leadDays)[0];
+  for (const v of vs){
+    if (!v.verified){ v.status = 'excluded'; v.label = SCENARIO.labels.notVerified; }
+    else if (v === choice){ v.status = 'choice'; v.label = `cheapest in time: ${fmtDate(v.arrives)}, ${money(v.total)}`; }
+    else if (v.arrives > need){ v.status = 'late'; v.label = `${v.total === cheapest ? 'cheapest, but ' : ''}arrives ${fmtDate(v.arrives)} — too late`; }
+    else if (v.leadDays === fastest){ v.status = 'fastest'; v.label = `fastest: ${fmtDate(v.arrives)}, ${money(v.total)}`; }
+    else { v.status = 'ok'; v.label = `${fmtDate(v.arrives)}, ${money(v.total)}`; }
+  }
+  const rank = { excluded:0, late:1, ok:2, fastest:3, choice:4 };
+  const revealOrder = vs.slice().sort((a, b) => rank[a.status] - rank[b.status]).map(v => v.id).concat('po');
+  const po = choice.total <= limit ? `${O.po} auto-approved (under ${money(limit)} policy)` : `${O.po} sent to a planner (over ${money(limit)})`;
+  return { vs, choice, need, po, revealOrder, qty };
+}
+
+function resolveShip(s, b){
+  const node = n => n === 'chosenVendor' ? 'v' + s.chosen : n;
+  const from = node(b.from), to = node(b.to);
+  const src = (from + '|' + b.part) in s.stock ? from + '|' + b.part : null;
+  const dst = (to + '|' + b.part) in s.stock ? to + '|' + b.part : null;
+  const qty = b.qty === 'toTarget' ? SCENARIO.stock[dst].target - s.stock[dst] : b.qty === 'order' ? s.orderQty : b.qty;
+  return { from, to, src, dst, qty };
+}
+
+/* ── State ──────────────────────────────────────────────────────────────── */
+function initialState(){
+  const S = SCENARIO;
+  return {
+    step:0, clock:parseClock(STEPS[0].clock),
+    queue:[...S.initialQueue], pending:null, lifting:null, done:[], complete:{},
+    qcap:'', cureTag:null, invite:false, colsDim:false, tagline:false,
+    dialog:false, served:null, onSite:[], caption:S.idle.caption,
+    stock:Object.fromEntries(Object.entries(S.stock).map(([k, v]) => [k, v.start])),
+    badges:[], dotOn:false,
+    agents:{ sourcing:{ status:S.idle.sourcing, glow:false, focus:null }, fab:{ status:S.idle.fab, glow:false, focus:null } },
+    vendorCard:false, orderQty:0, vendorShown:[], chosen:null,
+    factory:{ dot:null, alert:false, fix:false, output:false },
+  };
+}
+function applyStep(s, i){
+  s.step = i;
+  const c = parseClock(STEPS[i].clock); if (c) s.clock = c;
+  for (const b of STEPS[i].beats) BEATS[b.t].apply(s, b);
+  s.dotOn = false;
+}
+function buildState(n){ const s = initialState(); for (let i = 0; i <= n; i++) applyStep(s, i); return s; }
+
+/* ── Beats: apply(state) for instant replay, play(ctx) for the animated version ── */
+const simple = (fn, ms = 450, fx) => ({ apply:fn, play: async (c, b) => { fn(c.w, b); c.commit(); if (fx && !REDUCED) fx(c, b); await c.wait(ms); } });
+const pop = (c, el, peak = 1.12, ms = 420) => REDUCED ? null : c.start(el, [{ scale:'1' }, { scale:String(peak) }, { scale:'1' }], { duration:ms, easing:'ease-out' });
+
+const BEATS = {
+  qcap: { apply:(s, b) => { s.qcap = b.text; }, play:(c, b) => c.w.qcap === b.text ? null : typeCaption(c, b.text) },
+
+  appear: { apply:(s, b) => { s.pending = b.task; },
+    play: async (c, b) => {
+      const type = TASK(b.task).type, tv = TYPEVAR[type], el = E.cards[b.task].el, p = colCardPos(type);
+      if (!REDUCED) await c.done(c.start(E.colSpark[type],                 // the model "thinks"
+        [{ rotate:'0deg', scale:'1', color:cssHex('--muted') }, { rotate:'180deg', scale:'1.6', color:cssHex(tv), offset:.5 }, { rotate:'360deg', scale:'1', color:cssHex('--muted') }],
+        { duration:750, easing:'ease-in-out' }));
+      c.w.pending = b.task; c.move(0); c.commit();
+      c.start(E.colEl[type], [{ boxShadow:E.colShadow }, { boxShadow:`0 0 0 6px ${rgba(tv, .16)},0 18px 40px ${rgba(tv, .2)}`, offset:.35 }, { boxShadow:E.colShadow }], { duration:1500 });
+      if (REDUCED){ await c.wait(450); return; }
+      await c.done(c.start(el, [
+        { opacity:0, transform:`translate(${p.x}px,${p.y + 44}px) scale(.8)` },
+        { opacity:1, transform:`translate(${p.x}px,${p.y - 8}px) scale(1.04)`, offset:.65 },
+        { opacity:1, transform:`translate(${p.x}px,${p.y}px) scale(1)` }], { duration:620, easing:'cubic-bezier(.2,.8,.2,1)' }));
+      await c.wait(160);
+    } },
+
+  arrow: { apply(){}, play:(c, b) => pulseArrows(c, [TASK(b.task).type]) },
+
+  redPulse: { apply(){}, play: async (c, b) => {
+      const C = E.cards[b.task], ring = C.ring;
+      const r = c.start(ring, [{ boxShadow:`0 0 0 0 ${rgba('--cure', .65)}` }, { boxShadow:`0 0 0 36px ${rgba('--cure', 0)}` }], { duration:1100, easing:'ease-out' });
+      if (!REDUCED){
+        c.start(C.el, [{ translate:'0 0' }, { translate:'-8px 0' }, { translate:'7px 0' }, { translate:'-5px 0' }, { translate:'3px 0' }, { translate:'0 0' }], { duration:560, easing:'ease-in-out' });
+        pop(c, E.colIcon.cure, 1.18, 560);
+      }
+      await c.done(r);
+    } },
+
+  toQueue: { apply:(s, b) => { if (!s.queue.includes(b.task)) s.queue.push(b.task); s.pending = null; },
+    play: async (c, b) => {
+      const before = placements(c.w);
+      c.w.queue.push(b.task);                                    // reserve the slot: others slide (in a wave)
+      const hadMore = !E.more.classList.contains('hide');
+      await moveCards(c, changed(before, placements(c.w), b.task), 560, true);
+      if (!hadMore && !E.more.classList.contains('hide')) pop(c, E.more, 1.2, 450);
+      c.w.pending = null;                                        // then the new card arcs up
+      await flyCard(c, b.task, before[b.task], placements(c.w)[b.task]);
+    } },
+
+  tag: { apply:(s, b) => { s.cureTag = { task:b.task, text:b.text }; },
+    play: async (c, b) => {
+      c.w.cureTag = { task:b.task, text:b.text }; c.commit();
+      if (!REDUCED){
+        c.start(E.tag, [{ opacity:0, translate:'-24px 0' }, { opacity:1, translate:'0 0' }], { duration:460, easing:'cubic-bezier(.2,.8,.2,1)' });
+        c.start(E.tagIcon, [{ translate:'-16px 0' }, { translate:'3px 0', offset:.7 }, { translate:'0 0' }], { duration:760 });
+      }
+      await c.wait(760);
+    } },
+
+  arrowsInTurn: { apply(){}, play: async c => { for (const t of TYPES){ await pulseArrows(c, [t]); await c.wait(80); } } },
+  arrowsTogether: { apply(){}, play: c => pulseArrows(c, TYPES) },
+
+  invite: { apply:s => { s.invite = true; },
+    play: async c => {
+      c.w.invite = true; c.commit();
+      if (!REDUCED) c.start(E.barOpen, [{ scale:'1' }, { scale:'1.14' }, { scale:'1' }], { duration:520, iterations:2, easing:'ease-in-out' });
+      await c.wait(1100);
+    } },
+
+  dialog: { apply:(s, b) => { s.dialog = b.open; if (b.open) s.invite = false; },
+    play: async (c, b) => {
+      if (c.w.dialog === b.open) return;
+      BEATS.dialog.apply(c.w, b); c.commit();
+      if (b.open && !REDUCED) await revealMap(c); else await c.wait(340);
+    } },
+
+  caption: { apply:(s, b) => { s.caption = b.text; },
+    play:(c, b) => c.w.caption === b.text ? null : swapText(c, E.capText, () => { c.w.caption = b.text; }, true) },
+
+  serve: simple((s, b) => { s.served = b.task; }, 480, (c, b) => {
+    if (!b.task) return;
+    pop(c, E.rows[b.task].el, 1.05, 450); pop(c, E.sites[TASK(b.task).site], 1.3, 480);
+  }),
+
+  badges: { apply:(s, b) => { s.badges = [...b.show]; },
+    play: async (c, b) => {
+      const w = c.w, gone = w.badges.filter(k => !b.show.includes(k));
+      if (gone.length){ w.badges = w.badges.filter(k => b.show.includes(k)); c.commit(); await c.wait(380); }
+      for (const k of b.show) if (!w.badges.includes(k)){
+        w.badges.push(k); c.commit();
+        if (!REDUCED) c.start(E.badges[k].el, [{ scale:'.5' }, { scale:'1.12', offset:.7 }, { scale:'1' }], { duration:420, easing:'ease-out' });
+        await c.wait(440);
+      }
+      w.badges = [...b.show];
+    } },
+
+  flash: { apply(){}, play: async (c, b) => {
+      const f = E.badges[b.key].flag; f.textContent = b.text;
+      pop(c, E.badges[b.key].el, 1.1, 400);
+      await c.done(c.start(f, [{opacity:0},{opacity:1,offset:.1},{opacity:.2,offset:.28},{opacity:1,offset:.42},{opacity:.2,offset:.6},{opacity:1,offset:.74},{opacity:1,offset:.9},{opacity:0}], { duration:1700 }));
+    } },
+
+  ship: { apply:(s, b) => { const r = resolveShip(s, b); if (r.src) s.stock[r.src] -= r.qty; if (r.dst) s.stock[r.dst] += r.qty; }, play:(c, b) => shipPlay(c, b) },
+
+  onSite: simple((s, b) => { if (!s.onSite.includes(b.task)) s.onSite.push(b.task); }, 560, (c, b) => {
+    c.start(E.siteChk[TASK(b.task).site], [{ scale:'0' }, { scale:'1.35', offset:.65 }, { scale:'1' }], { duration:480, easing:'ease-out' });
+  }),
+
+  agent: { apply:(s, b) => { const a = s.agents[b.who]; for (const k of ['glow', 'focus', 'status']) if (k in b) a[k] = b[k]; },
+    play: async (c, b) => {
+      const a = c.w.agents[b.who];
+      if ('focus' in b && b.focus !== a.focus){
+        if (a.focus){ a.focus = null; c.commit(); await c.wait(260); }
+        if ('glow' in b) a.glow = b.glow;
+        a.focus = b.focus; c.commit();
+        if (b.focus && !REDUCED) c.start(E.att[b.who], [{ strokeDashoffset:40 }, { strokeDashoffset:0 }], { duration:600, easing:'ease-out' });
+        await c.wait(480);
+      } else if ('glow' in b && b.glow !== a.glow){ a.glow = b.glow; c.commit(); await c.wait(450); }
+      if ('status' in b && b.status !== a.status){
+        pop(c, E.agents[b.who].av, 1.18, 420);
+        await swapText(c, E.agents[b.who].status, () => { a.status = b.status; }, true);
+      }
+    } },
+
+  vendorCard: { apply:(s, b) => { if (b.show) s.orderQty = orderNeed(s); s.vendorCard = b.show; },
+    play: async (c, b) => { BEATS.vendorCard.apply(c.w, b); c.commit(); await c.wait(580); } },
+
+  decide: { apply:s => { const a = analyse(s.orderQty); s.vendorShown = [...a.revealOrder]; s.chosen = a.choice.id; },
+    play: async c => {
+      const a = analyse(c.w.orderQty);
+      for (const id of a.revealOrder){
+        c.w.vendorShown.push(id); c.commit();
+        if (!REDUCED){
+          if (id === 'po') c.start(E.vpo, [{ opacity:0, scale:'1.5', rotate:'-7deg' }, { opacity:1, scale:'.96', rotate:'1deg', offset:.7 }, { opacity:1, scale:'1', rotate:'0deg' }], { duration:520, easing:'ease-out' });
+          else if (id === a.choice.id) c.start(E.vrows[id].el, [{ scale:'1' }, { scale:'1.06' }, { scale:'1' }], { duration:520, easing:'ease-out' });
+        }
+        await c.wait(id === 'po' ? 700 : 850);
+      }
+      c.w.chosen = a.choice.id; c.commit();
+    } },
+
+  factory: { apply:(s, b) => { Object.assign(s.factory, b.set); },
+    play: async (c, b) => {
+      Object.assign(c.w.factory, b.set); c.commit();
+      if (!REDUCED){
+        if (b.set.alert){
+          c.start(E.facIcon, [{ rotate:'0deg' }, { rotate:'-9deg' }, { rotate:'8deg' }, { rotate:'-6deg' }, { rotate:'5deg' }, { rotate:'0deg' }], { duration:420, iterations:3 });
+          c.start(E.fdot, [{ boxShadow:`0 0 0 0 ${rgba('--low', .6)}` }, { boxShadow:`0 0 0 18px ${rgba('--low', 0)}` }], { duration:900, iterations:2 });
+        }
+        if (b.set.dot === 'ok'){ pop(c, E.fdot, 1.5, 460); c.start(E.fdot, [{ boxShadow:`0 0 0 0 ${rgba('--ok', .6)}` }, { boxShadow:`0 0 0 18px ${rgba('--ok', 0)}` }], { duration:800 }); }
+        if (b.set.output) c.start(E.otag, [{ opacity:0, scale:'.6' }, { opacity:1, scale:'1.08', offset:.7 }, { opacity:1, scale:'1' }], { duration:460, easing:'ease-out' });
+      }
+      await c.wait(b.set.alert ? 1300 : b.set.fix ? 950 : 600);
+    } },
+
+  complete: simple((s, b) => { s.complete[b.task] = b.text; }, 950, (c, b) => {
+    c.start(E.cards[b.task].ring, [{ boxShadow:`0 0 0 0 ${rgba('--ok', .6)}` }, { boxShadow:`0 0 0 30px ${rgba('--ok', 0)}` }], { duration:950, easing:'ease-out' });
+    pop(c, E.cards[b.task].el, 1.04, 500);
+  }),
+
+  lift: { apply:(s, b) => {
+      s.queue = s.queue.filter(x => x !== b.task); if (!s.done.includes(b.task)) s.done.push(b.task);
+      if (s.cureTag && s.cureTag.task === b.task) s.cureTag = null; },
+    play: async (c, b) => {
+      const w = c.w; w.lifting = b.task; if (w.cureTag && w.cureTag.task === b.task) w.cureTag = null;
+      c.move(650); c.commit(); await c.wait(680);                 // card lifts out
+      const before = placements(w);
+      w.queue = w.queue.filter(x => x !== b.task); w.done.push(b.task); w.lifting = null;
+      await moveCards(c, changed(before, placements(w), b.task), 560, true);   // others slide left
+    } },
+
+  metrics: { apply:s => { s.metricsShown = SCENARIO.results.rows.length; },
+    play: async c => {
+      for (let i = 0; i < SCENARIO.results.rows.length; i++){
+        c.w.metricsShown = i + 1; c.commit();
+        if (!REDUCED) countUp(c, E.mvals[i], SCENARIO.results.rows[i][1], 1000);
+        await c.wait(1150);
+      }
+    } },
+
+  flow: { apply:s => { s.flowShown = SCENARIO.flow.stages.length + 1; },
+    play: async c => {
+      E.fqText.innerHTML = TYPING; E.fq.classList.add('on');        // the manager "types" the question
+      await typeInto(c, E.fqb, E.fqText, () => { c.w.flowShown = 1; }, true);
+      await c.wait(450);
+      for (let i = 0; i < SCENARIO.flow.stages.length; i++){ c.w.flowShown = i + 2; c.commit(); await c.wait(1200); }
+    } },
+
+  closing: { apply:s => { s.colsDim = true; s.tagline = true; },
+    play: async c => {
+      c.w.colsDim = true; c.w.tagline = true; c.commit();
+      if (!REDUCED) [...E.tagline.querySelectorAll('.tw')].forEach((w, i) =>
+        c.start(w, [{ opacity:0, translate:'0 18px' }, { opacity:1, translate:'0 0' }], { duration:520, delay:250 + i * 90, easing:'cubic-bezier(.2,.8,.2,1)', fill:'backwards' }));
+      await c.wait(1600);
+    } },
+};
+
+/* ── Card placement (pure, used by render and by the slide logic) ─────────── */
+function placement(s, id, order){
+  const type = TASK(id).type, idx = order.indexOf(id);
+  if (s.pending === id){ const p = colCardPos(type); return { x:p.x, y:p.y, sc:1, vis:true, front:true }; }
+  if (s.lifting === id) return { x:slotX(idx), y:L.rowTop - 70, sc:.96, vis:false, front:true };
+  if (idx >= 0) return { x:slotX(Math.min(idx, L.slots)), y:L.rowTop, sc:1, vis:idx < L.slots, front:false };
+  if (s.done.includes(id)) return null;                    // gone: stays hidden where it left
+  const p = colCardPos(type); return { x:p.x, y:p.y + 12, sc:.94, vis:false, front:false };
+}
+function placements(s){ const o = queueOrder(s), m = {}; for (const id in SCENARIO.tasks) m[id] = placement(s, id, o); return m; }
+function changed(a, b, skip){ return Object.keys(b).filter(id => id !== skip && a[id] && b[id] && (a[id].x !== b[id].x || a[id].y !== b[id].y || a[id].vis !== b[id].vis)); }
+
+/* ── DOM build ──────────────────────────────────────────────────────────── */
+const E = { cards:{}, rows:{}, sites:{}, siteChk:{}, nodes:{}, badges:{}, agents:{}, hot:{}, hotpk:{}, vrows:{}, vpills:{}, att:{}, colEl:{}, colSpark:{}, colIcon:{} };
+let GEO = {};
+
+function checker(svg, w, h, sq){
+  for (let y = 0; y < h; y += sq) for (let x = 0; x < w; x += sq)
+    svg.append(sv('rect', { x, y, width:sq, height:sq, fill: ((x + y) / sq) % 2 ? '#FFFFFF' : cssHex('--text') }));
+}
+
+function build(){
+  const S = SCENARIO, LB = S.labels;
+  Object.assign(E, { stage:$('#stage'), day:$('#cDay'), sep:$('#cSep'), time:$('#cTime'), clock:$('#clock'), clockWrap:$('#clockWrap'),
+    bubble:$('#bubble'), bubbleText:$('#bubbleText'), qbot:$('#qbot'), more:$('#more'), tag:$('#tag'), tagIcon:$('#tagIcon'), tagText:$('#tagText'),
+    cols:$('#cols'), arrows:$('#arrows'), bar:$('#bar'), barOpen:$('#barOpen'), cardLayer:$('#cardLayer'), tagline:$('#tagline'), dlg:$('#dlg'),
+    capText:$('#capText'), map:$('#map'), mapLines:$('#mapLines'), mapTop:$('#mapTop'), notes:$('#notes'), hint:$('#hint'), toast:$('#toast') });
+  $('#brandName').textContent = S.product; checker($('#brandMark'), 30, 30, 7.5);
+  $('#qlabel').textContent = LB.queue; $('#qname').textContent = LB.queueAgent; $('#qbot').innerHTML = icon('bot', 22);
+  E.tagIcon.innerHTML = icon('truck', 22, 2.2);
+  $('#barIcon').innerHTML = icon('truck', 34, 2); $('#barTitle').textContent = LB.bar; $('#barSub').textContent = LB.barSub; E.barOpen.textContent = LB.barOpen;
+  $('#dmark').innerHTML = icon('truck', 28, 2); $('#dtitle').textContent = LB.dialog; $('#dclose').innerHTML = icon('close', 26, 2.4); $('#dqlabel').textContent = LB.queue;
+  E.tagline.innerHTML = S.tagline.split(' ').map(w => `<span class="tw">${esc(w)}</span>`).join(' ');
+  E.hint.textContent = LB.hint;
+  const dots = $('#dots'); STEPS.forEach(() => dots.append(h('i', 'dot'))); E.dots = [...dots.children];
+  checker($('#startline'), 16, 210, 8);
+
+  // Pit-lane grid: empty boxes + P1…P6 labels
+  for (let i = 0; i < L.slots; i++){
+    const box = h('div', 'slot'); box.style.left = slotX(i) + 'px'; $('#slots').append(box);
+    const lab = h('div', 'plabel', LB.slot + (i + 1)); lab.style.left = slotX(i) + 'px'; $('#slots').append(lab);
+  }
+
+  // Source bays + supply-chain arrows
+  for (const type of TYPES){
+    const ty = S.types[type], col = h('div', `col t-${type}`);
+    col.style.left = colX(type) + 'px';
+    col.innerHTML = `<span class="wm">${icon(ty.icon, 220, 1.6)}</span>
+      <div class="hd"><div class="ic">${icon(ty.icon, 32, 2.2)}</div><div><h2>${esc(ty.title)}</h2><div class="sub">${esc(ty.subtitle)}</div></div></div>
+      <div class="src"><span class="si">${icon('spark', 22)}</span><span>${esc(ty.source)}</span></div>
+      <div class="ghost"><span class="gi">${icon('eye', 34, 1.8)}</span><span>${esc(ty.watching)}</span></div>`;
+    E.cols.append(col); E.colEl[type] = col; E.colSpark[type] = col.querySelector('.si'); E.colIcon[type] = col.querySelector('.ic');
+    const g = sv('g', { transform:`translate(${colX(type) + L.colW / 2} 0)` });
+    const arrow = cls => `<g class="${cls}"><path d="M0 66V16"/><path d="M-12 28 0 15 12 28"/></g>`;
+    g.innerHTML = arrow('base') + '<circle class="pk idlepk" cx="0" cy="62" r="5"/>' + arrow('hot') + '<circle class="pk hotpk" cx="0" cy="62" r="8"/>';
+    E.arrows.append(g); E.hot[type] = g.querySelector('.hot'); E.hotpk[type] = g.querySelector('.hotpk');
+  }
+  E.colShadow = getComputedStyle(E.colEl[TYPES[0]]).boxShadow;
+
+  // Task cards (main view) and compact rows (dialog)
+  for (const [id, t] of Object.entries(S.tasks)){
+    const ty = S.types[t.type];
+    const el = h('div', `card t-${t.type} hide`, `<div class="ring"></div>
+      <div class="k"><span class="type">${esc(ty.label)}</span><span class="id">${esc(id)}</span></div>
+      <div class="pn">${esc(t.part)}</div><div class="nm">${esc(S.parts[t.part])}</div>
+      <div class="site">Site ${esc(t.site)}</div><div class="why">${esc(t.reason)}</div>
+      <div class="fin">${icon('check', 26, 3)}<span></span></div>`);
+    E.cardLayer.append(el); E.cards[id] = { el, ring:el.querySelector('.ring'), fin:el.querySelector('.fin span') };
+    const r = h('div', `qr t-${t.type} hide`, `<span class="rk"></span><div><div class="l1"><b>${esc(id)}</b><span>${esc(t.part)}</span></div>
+      <div class="l2"><span class="st">Site ${esc(t.site)}</span><span class="ok">${icon('check', 18, 3)}${esc(LB.partOnSite)}</span></div></div>`);
+    $('#dq').append(r); E.rows[id] = { el:r, rank:r.querySelector('.rk') };
+  }
+  const anyCard = E.cards[Object.keys(S.tasks)[0]].el;
+  E.cardShadow = getComputedStyle(anyCard).boxShadow;
+  E.cardLift = cssHex('--lift');
+  buildMap();
+  buildPages();
+
+  E.bar.addEventListener('click', openSupply);
+  const rb = $('#resetBtn'); E.resetBtn = rb;                  // Reset: back to step 0 from anywhere
+  rb.innerHTML = icon('reset', 20, 2.6) + `<span>${esc(LB.reset)}</span>`;
+  const qb = $('#resBtn'); E.resBtn = qb;                      // Resources mode on/off
+  qb.innerHTML = icon('doc', 20, 2.4) + '<span id="resBtnLabel"></span>'; E.resBtnLabel = $('#resBtnLabel');
+  qb.addEventListener('mousedown', e => e.preventDefault());
+  qb.addEventListener('click', () => { toggleRes(); hideHint(); });
+  rb.addEventListener('mousedown', e => e.preventDefault());   // keep focus off it, so Space still means "next"
+  rb.addEventListener('click', () => { reset(); hideHint(); rb.querySelector('svg').animate([{ rotate:'0deg' }, { rotate:'-360deg' }], { duration:500, easing:'ease-out' }); });
+  E.bar.addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); openSupply(); } });
+  $('#dclose').addEventListener('click', () => { if (state.dialog) toggleDialog(); });
+  $('#backdrop').addEventListener('click', () => { if (state.dialog) toggleDialog(); });
+}
+
+/* Resources: IoT page layout (page coordinates; the page sits under the 88px header). */
+const RES_PAGES = SCENARIO.resources;
+const IOT_POS = {
+  parts:{ x:72,   y:425, w:320, h:290 }, iot:{ x:472, y:425, w:320, h:290 },
+  maint:{ x:900,  y:300, w:480, h:230 }, prev:{ x:900, y:600, w:480, h:230 },
+  queue:{ x:1488, y:425, w:360, h:290 },
+};
+const IOT_LINKS = [
+  { to:'iot',   pts:[[398, 570], [464, 570]] },
+  { to:'maint', pts:[[798, 550], [846, 550], [846, 415], [892, 415]] },
+  { to:'prev',  pts:[[798, 590], [846, 590], [846, 715], [892, 715]] },
+  { to:'queue', pts:[[1386, 415], [1434, 415], [1434, 550], [1480, 550]] },
+  { to:'queue', pts:[[1386, 715], [1434, 715], [1434, 590], [1480, 590]] },
+];
+
+function buildPages(){
+  const R = SCENARIO.results, F = SCENARIO.flow;
+  const pm = h('section', 'page'); pm.id = 'pgMetrics';
+  pm.innerHTML = `<div class="phead"><span class="pic tone-prev">${icon('pulse', 40, 2.2)}</span><h1>${esc(R.title)}</h1></div>
+    <div id="mtable"><div class="mh"><span>${esc(R.head[0])}</span><span></span><span>${esc(R.head[1])}</span></div>${
+      R.rows.map(([k, v]) => `<div class="mrow" style="--v:${parseFloat(v)}%"><span class="mname">${esc(k)}</span><span class="mtrack"><i class="mfill"></i></span><span class="mval">${esc(v)}</span></div>`).join('')}</div>`;
+  const pf = h('section', 'page'); pf.id = 'pgFlow';
+  let html = `<div id="fq"><span class="who"><span class="wi">${icon('user', 24, 2.2)}</span>${esc(F.asker)}</span><div id="fqb"><span id="fqText"></span></div></div>
+    <svg class="farr" width="40" height="124" style="left:250px;top:258px"><path d="M20 4V116M8 104 20 116 32 104"/></svg>`;
+  F.stages.forEach((st, i) => {
+    const x = 72 + i * 460;
+    if (i) html += `<svg class="farr" width="64" height="40" style="left:${x - 64}px;top:586px"><path d="M6 20H54M42 8 54 20 42 32"/></svg>`;
+    html += `<div class="fst tone-${st.tone}" style="left:${x}px">${st.n ? `<span class="fnum">${st.n}</span>` : ''}<span class="fi">${icon(st.icon, 34, 2.2)}</span><h3>${esc(st.title)}</h3><p>${esc(st.text)}</p></div>`;
+  });
+  pf.innerHTML = html;
+  // IoT data path: sites → IoT Core → Maintenance / Prevention models → priority queue
+  const I = SCENARIO.iot, pi = h('section', 'page'); pi.id = 'pgIot';
+  let ih = `<div class="phead"><span class="pic tone-ink">${icon('cloud', 40, 2.2)}</span><h1>${esc(I.title)}</h1></div><svg id="iotSvg" width="1920" height="992">`;
+  IOT_LINKS.forEach(k => {
+    const d = 'M' + k.pts.map(p => p.join(' ')).join(' L'), [ex, ey] = k.pts[k.pts.length - 1];
+    ih += `<path class="conn" d="${d} M${ex - 12} ${ey - 12} L${ex} ${ey} L${ex - 12} ${ey + 12}"/><path class="motion" d="${d}"/><circle class="pkt" r="9"/>`;
+  });
+  ih += '</svg>';
+  I.nodes.forEach(n => {
+    const g = IOT_POS[n.id];
+    ih += `<div class="inode tone-${n.tone}" style="left:${g.x}px;top:${g.y}px;width:${g.w}px;height:${g.h}px"><div class="ih"><span class="tile">${icon(n.icon, 28, 2.2)}</span><span class="ik">${esc(n.kicker)}</span></div><h3>${esc(n.title)}</h3><p>${esc(n.text)}</p></div>`;
+  });
+  pi.innerHTML = ih;
+  const bd = $('#backdrop'); E.stage.insertBefore(pi, bd); E.stage.insertBefore(pm, bd); E.stage.insertBefore(pf, bd);
+  const conns = [...pi.querySelectorAll('.conn')], motions = [...pi.querySelectorAll('.motion')], pkts = [...pi.querySelectorAll('.pkt')];
+  E.pgIot = pi; E.inodes = [...pi.querySelectorAll('.inode')];
+  E.iconns = IOT_LINKS.map((k, i) => ({ el:conns[i], motion:motions[i], dot:pkts[i], item:I.nodes.findIndex(n => n.id === k.to) }));
+  const rd = $('#rdots'); RES_PAGES.forEach(() => rd.append(h('i', 'dot'))); E.rdots = [...rd.children];
+  Object.assign(E, { pgMetrics:pm, pgFlow:pf, mrows:[...pm.querySelectorAll('.mrow')], mvals:[...pm.querySelectorAll('.mval')],
+    fq:pf.querySelector('#fq'), fqb:pf.querySelector('#fqb'), fqText:pf.querySelector('#fqText'),
+    fstages:[...pf.querySelectorAll('.fst')], farrows:[...pf.querySelectorAll('.farr')] });
+}
+
+function edgePoint(n, p, pad = 3){
+  const dx = p.cx - n.cx, dy = p.cy - n.cy, d = Math.hypot(dx, dy) || 1;
+  let t = n.r ? n.r / d : Math.min((n.w / 2) / Math.abs(dx || 1e-9), (n.h / 2) / Math.abs(dy || 1e-9));
+  t += pad / d;
+  return { x: n.cx + dx * t, y: n.cy + dy * t };
+}
+
+function buildMap(){
+  const S = SCENARIO, N = {}, over = E.map;
+  N.central = { ...MAP.central }; N.factory = { ...MAP.factory };
+  for (const [hid, hb] of Object.entries(S.network.hubs)){
+    const g = MAP.hubs[hid]; N[hid] = { cx:g.cx, cy:g.cy, w:MAP.hubW, h:MAP.hubH };
+    const top = g.cy < MAP.central.cy, n = hb.sites.length;
+    hb.sites.forEach((sid, i) => { N[sid] = { cx: g.cx + (i - (n - 1) / 2) * 2 * MAP.siteDX, cy: top ? MAP.siteTopY : MAP.siteBotY, r:MAP.siteR }; });
+  }
+  const V = MAP.vendors;
+  S.vendors.forEach((v, i) => { N['v' + v.id] = { cx: V.x + V.w / 2, cy: V.y + i * (V.h + V.gap) + V.h / 2, w:V.w, h:V.h }; });
+  const vBottom = V.y + S.vendors.length * (V.h + V.gap) - V.gap;
+  N.vendors = { cx: V.x + V.w / 2, cy: (V.headY + vBottom) / 2, w:V.w, h: vBottom - V.headY };
+  GEO = N;
+
+  // Lines (drawn edge to edge, so shipments start and end at the node outline)
+  const links = [];
+  for (const [hid, hb] of Object.entries(S.network.hubs)){ links.push(['central', hid]); hb.sites.forEach(sid => links.push([hid, sid])); }
+  links.push(['factory', 'central']);
+  S.vendors.filter(v => v.verified).forEach(v => links.push(['v' + v.id, 'central']));
+  for (const [a, b] of links){
+    const pa = edgePoint(N[a], N[b]), pb = edgePoint(N[b], N[a]);
+    E.mapLines.append(sv('path', { id:`ln-${a}-${b}`, d:`M${pa.x.toFixed(1)} ${pa.y.toFixed(1)} L${pb.x.toFixed(1)} ${pb.y.toFixed(1)}` }));
+  }
+  for (const who of ['fab', 'sourcing']){ const p = sv('path', { class:'att', d:'M0 0' }); E.mapLines.append(p); E.att[who] = p; }
+
+  // Nodes
+  const place = (id, el, n) => { el.style.left = n.cx + 'px'; el.style.top = n.cy + 'px'; if (n.w){ el.style.width = n.w + 'px'; el.style.height = n.h + 'px'; } over.append(el); E.nodes[id] = el; return el; };
+  place('central', h('div', 'node central', `<span class="ni">${icon('hub', 42, 1.8)}</span><span>${esc(S.network.central)}</span>`), N.central);
+  const fac = place('factory', h('div', 'node factory', `<span class="ni">${icon('factory', 32, 1.8)}</span><span>${esc(S.network.factory)}</span><i class="fdot"></i>`), N.factory);
+  E.fdot = fac.querySelector('.fdot'); E.facIcon = fac.querySelector('.ni');
+  for (const [hid, hb] of Object.entries(S.network.hubs)){
+    place(hid, h('div', 'node hub', `<span class="ni">${icon('hub', 24)}</span><span>${esc(hb.name)}</span>`), N[hid]);
+    for (const sid of hb.sites){
+      const el = place(sid, h('div', 'node site', `${esc(sid)}<i class="sk">${icon('check', 14, 3.4)}</i>`), N[sid]);
+      el.style.width = el.style.height = MAP.siteR * 2 + 'px'; E.sites[sid] = el; E.siteChk[sid] = el.querySelector('.sk');
+    }
+  }
+  const vh = h('div', '', esc(S.labels.vendors)); vh.id = 'vhead'; vh.style.left = V.x + 'px'; vh.style.top = V.headY + 'px'; over.append(vh); E.nodes.vhead = vh;
+  S.vendors.forEach(v => {
+    const n = N['v' + v.id], el = h('div', 'vend' + (v.verified ? '' : ' unv'),
+      `<span class="ni">${icon('shield', 22)}</span><span>${esc(v.name)}</span>${v.verified ? '' : `<span class="vnote">${esc(S.labels.notVerified)}</span>`}`);
+    Object.assign(el.style, { left:(n.cx - n.w / 2) + 'px', top:(n.cy - n.h / 2) + 'px', width:n.w + 'px', height:n.h + 'px' });
+    over.append(el); E.vpills[v.id] = el; E.nodes['v' + v.id] = el;
+  });
+
+  // Stock badges: on the outer side of each local hub; below the central hub
+  for (const key of Object.keys(S.stock)){
+    const [loc, part] = key.split('|'), n = N[loc];
+    const el = h('div', 'badge hide', `<span>${esc(part)} ·</span><span class="n"></span><span class="flag"></span>`);
+    if (loc === 'central'){ el.style.left = n.cx + 'px'; el.style.top = (n.cy + n.h / 2 + 14) + 'px'; el.style.transform = 'translateX(-50%)'; el.classList.add('fl-below'); }
+    else if (n.cx > MAP.central.cx){ el.style.left = (n.cx + n.w / 2 + 12) + 'px'; el.style.top = n.cy + 'px'; el.style.transform = 'translateY(-50%)'; }
+    else { el.style.left = (n.cx - n.w / 2 - 12) + 'px'; el.style.top = n.cy + 'px'; el.style.transform = 'translate(-100%,-50%)'; el.classList.add('fl-left'); }
+    over.append(el); E.badges[key] = { el, num:el.querySelector('.n'), flag:el.querySelector('.flag') };
+  }
+
+  // Agents (top corners)
+  for (const who of ['fab', 'sourcing']){
+    const el = h('div', 'agent', `<span class="av">${icon('bot', 28)}</span><div><div class="an">${esc(S.labels[who])}</div><div class="as"></div></div>`);
+    el.style.left = MAP[who].x + 'px'; el.style.top = MAP[who].y + 'px'; over.append(el);
+    E.agents[who] = { el, status:el.querySelector('.as'), av:el.querySelector('.av') };
+  }
+
+  // Factory callout + "output on plan" tag on the factory → central line
+  const fc = h('div', '', `<div class="fl" id="fl1"><span class="mk" id="fmk"></span><span>${esc(S.factoryEvent.alert)}</span></div>
+    <div class="fl" id="fl2"><span class="ck">${icon('check', 20, 3)}</span><span>${esc(S.factoryEvent.fix)}</span></div>`);
+  fc.id = 'fcall'; fc.style.left = MAP.fcall.x + 'px'; fc.style.top = MAP.fcall.y + 'px'; over.append(fc);
+  E.fl1 = $('#fl1'); E.fl2 = $('#fl2'); E.fmk = $('#fmk');
+  const fl = edgePoint(N.factory, N.central), cl = edgePoint(N.central, N.factory);
+  const ot = h('div', 'hide', `${icon('check', 18, 3)}<span>${esc(S.factoryEvent.output)}</span>`); ot.id = 'otag';
+  ot.style.left = ((fl.x + cl.x) / 2) + 'px'; ot.style.top = ((fl.y + cl.y) / 2 - 10) + 'px'; over.append(ot); E.otag = ot;
+
+  // Vendor decision card
+  const vc = h('div', '', `<div class="vk">${esc(S.labels.order)}</div><div class="vq" id="vq"></div><div class="vn" id="vneed"></div>`);
+  vc.id = 'vcard'; vc.style.left = MAP.vcard.x + 'px'; vc.style.top = MAP.vcard.y + 'px';
+  S.vendors.forEach(v => {
+    const r = h('div', 'vr', `<div class="vh"><span class="nm">${esc(v.name)}</span><span class="vm">${icon('check', 24, 3)}</span></div><div class="vl"></div>`);
+    vc.append(r); E.vrows[v.id] = { el:r, label:r.querySelector('.vl') };
+  });
+  const po = h('div', '', `<span class="ck">${icon('check', 22, 3)}</span><span id="vpoText"></span>`); po.id = 'vpo'; vc.append(po);
+  over.append(vc); E.vcard = vc; E.vq = $('#vq'); E.vneed = $('#vneed'); E.vpo = po; E.vpoText = $('#vpoText');
+
+  // Shipment layer: route highlight, comet trail, dot, arrival ripple (one at a time)
+  E.route = sv('path', { id:'route', d:'M0 0' }); E.mapTop.append(E.route);
+  const trail = sv('g', { id:'trail' }); E.trail = [9, 7.5, 6, 4.5].map(r => { const t = sv('circle', { r }); t.style.opacity = 0; trail.append(t); return t; });
+  E.mapTop.append(trail);
+  E.ripple = sv('circle', { class:'ripple', r:16 }); E.mapTop.append(E.ripple);
+  const dot = sv('g', { id:'dot' });
+  dot.innerHTML = '<circle r="12"/><g transform="translate(16 -46)"><rect rx="9" height="32" width="80"/><text x="11" y="22"></text></g>';
+  E.mapTop.append(dot); E.dot = dot; E.dotC = dot.querySelector('circle'); E.dotR = dot.querySelector('rect'); E.dotT = dot.querySelector('text');
+}
+
+/* ── Render: draws everything from state ────────────────────────────────── */
+function render(s){
+  const S = SCENARIO;
+  E.day.textContent = s.clock.day; E.time.textContent = s.clock.time || '';
+  E.sep.style.display = E.time.style.display = s.clock.time ? '' : 'none';
+  E.dots.forEach((d, i) => { d.className = 'dot' + (i < s.step ? ' past' : i === s.step ? ' now' : ''); });
+  E.bubbleText.innerHTML = rich(s.qcap);
+
+  // Main view cards
+  const order = queueOrder(s);
+  for (const id in E.cards){
+    const C = E.cards[id], p = placement(s, id, order);
+    if (!p){ C.el.classList.add('hide'); C.el.classList.remove('front'); continue; }
+    C.el.style.transform = `translate(${p.x}px,${p.y}px) scale(${p.sc})`;
+    C.el.classList.toggle('hide', !p.vis); C.el.classList.toggle('front', p.front);
+    C.el.classList.toggle('complete', !!s.complete[id]); if (s.complete[id]) C.fin.textContent = s.complete[id];
+  }
+  const extra = Math.max(0, order.length - L.slots);
+  E.more.style.left = slotX(L.slots) + 'px';
+  E.more.textContent = `+${extra} more`; E.more.classList.toggle('hide', !extra);
+  const ti = s.cureTag ? order.indexOf(s.cureTag.task) : -1;
+  if (ti >= 0){ E.tag.style.left = slotX(Math.min(ti, L.slots - 1)) + 'px'; E.tagText.textContent = s.cureTag.text; }
+  E.tag.classList.toggle('hide', ti < 0);
+  E.bar.classList.toggle('invite', s.invite);
+  E.cols.classList.toggle('dim', s.colsDim);
+  E.tagline.classList.toggle('show', s.tagline);
+
+  // Dialog
+  E.stage.classList.toggle('open', s.dialog);
+  E.capText.innerHTML = rich(s.caption);
+  const dorder = order.filter(id => id !== s.pending);
+  for (const id in E.rows){
+    const R = E.rows[id], i = dorder.indexOf(id);
+    if (i >= 0){ R.el.style.transform = `translateY(${i * 94}px)`; R.rank.textContent = S.labels.slot + (i + 1); }
+    R.el.classList.toggle('hide', i < 0); R.el.classList.toggle('serve', s.served === id); R.el.classList.toggle('onsite', s.onSite.includes(id));
+  }
+  const servedSite = s.served ? TASK(s.served).site : null;
+  for (const sid in E.sites){
+    const el = E.sites[sid]; el.classList.toggle('hl', sid === servedSite);
+    TYPES.forEach(t => el.classList.toggle('t-' + t, sid === servedSite && TASK(s.served).type === t));
+    el.classList.toggle('got', s.onSite.some(t => TASK(t).site === sid));
+  }
+  for (const k in E.badges){
+    const B = E.badges[k], v = s.stock[k];
+    B.num.textContent = v; B.el.classList.toggle('hide', !s.badges.includes(k)); B.el.classList.toggle('low', isLow(k, v));
+  }
+  for (const who of ['fab', 'sourcing']){
+    const a = s.agents[who], A = E.agents[who];
+    A.status.innerHTML = rich(a.status); A.el.classList.toggle('glow', a.glow);
+    const ln = E.att[who];
+    if (a.focus && GEO[a.focus]){
+      const el = A.el, r = { cx: el.offsetLeft + el.offsetWidth / 2, cy: el.offsetTop + el.offsetHeight / 2, w: el.offsetWidth, h: el.offsetHeight };
+      const p1 = edgePoint(r, GEO[a.focus], 6), p2 = edgePoint(GEO[a.focus], r, 8);
+      ln.setAttribute('d', `M${p1.x.toFixed(1)} ${p1.y.toFixed(1)} L${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`);
+    }
+    ln.classList.toggle('on', !!a.focus);
+  }
+  // Vendor card
+  const an = analyse(s.orderQty || orderNeed(s));
+  E.vq.innerHTML = rich(`${an.qty} × ${S.order.part}`);
+  E.vneed.textContent = `${S.labels.needBy} ${fmtDate(an.need, true)}`;
+  for (const v of an.vs){ const R = E.vrows[v.id]; R.label.textContent = v.label; R.el.className = 'vr ' + v.status + (s.vendorShown.includes(v.id) ? ' shown' : ''); }
+  E.vpoText.innerHTML = rich(an.po); E.vpo.classList.toggle('shown', s.vendorShown.includes('po'));
+  E.vcard.classList.toggle('show', s.vendorCard);
+  for (const id in E.vpills) E.vpills[id].classList.toggle('chosen', s.chosen === id && !s.vendorCard);
+  // Factory
+  E.fdot.className = 'fdot' + (s.factory.dot ? ' ' + s.factory.dot : '');
+  E.fmk.classList.toggle('ok', s.factory.dot === 'ok');
+  E.fl1.classList.toggle('on', s.factory.alert); E.fl2.classList.toggle('on', s.factory.fix);
+  E.otag.classList.toggle('hide', !s.factory.output);
+  E.dot.classList.toggle('on', s.dotOn);
+  if (!s.dotOn) E.trail.forEach(t => { t.style.opacity = 0; });
+}
+function renderInstant(s){
+  E.stage.classList.add('instant');
+  for (const id in E.cards) E.cards[id].el.style.transitionDelay = '';
+  render(s); void E.stage.offsetWidth; E.stage.classList.remove('instant');
+}
+
+/* ── Animation helpers ──────────────────────────────────────────────────── */
+async function swapText(c, el, mutate, slide){
+  const dy = slide && !REDUCED ? 10 : 0;
+  const out = c.start(el, [{ opacity:1, translate:'0 0' }, { opacity:0, translate:`0 ${-dy}px` }], { duration:200, fill:'forwards' });
+  await c.done(out);
+  mutate(); c.commit();
+  const inn = c.start(el, [{ opacity:0, translate:`0 ${dy}px` }, { opacity:1, translate:'0 0' }], { duration:340, easing:'ease-out' }); out.cancel();
+  await c.done(inn);
+}
+const TYPING = '<span class="typing"><i></i><i></i><i></i></span>';
+async function typeInto(c, bub, txt, mutate, alreadyTyping){   // typing dots, then the sentence
+  let w1 = bub.offsetWidth;
+  if (!alreadyTyping){
+    const out = c.start(txt, [{ opacity:1 }, { opacity:0 }], { duration:180, fill:'forwards' });
+    await c.done(out);
+    const w0 = bub.offsetWidth;
+    txt.innerHTML = TYPING; out.cancel();
+    w1 = bub.offsetWidth;
+    if (!REDUCED) await c.done(c.start(bub, [{ width:w0 + 'px' }, { width:w1 + 'px' }], { duration:280, easing:'ease-in-out' }));
+  }
+  await c.wait(REDUCED ? 200 : 700);
+  mutate(); c.commit();
+  const w2 = bub.offsetWidth;
+  if (!REDUCED){
+    const g = c.start(bub, [{ width:w1 + 'px' }, { width:w2 + 'px' }], { duration:320, easing:'ease-in-out' });
+    const hide = c.start(txt, [{ opacity:0 }, { opacity:0 }], { duration:320 });
+    await Promise.all([c.done(g), c.done(hide)]);
+  }
+  await c.done(c.start(txt, [{ opacity:0, translate:'0 10px' }, { opacity:1, translate:'0 0' }], { duration:380, easing:'ease-out' }));
+}
+function typeCaption(c, text){                             // Queue agent "types", then speaks
+  if (!REDUCED) c.start(E.qbot, [{ rotate:'0deg' }, { rotate:'-14deg' }, { rotate:'12deg' }, { rotate:'0deg' }], { duration:700 });
+  return typeInto(c, E.bubble, E.bubbleText, () => { c.w.qcap = text; });
+}
+function countUp(c, el, text, ms){                         // e.g. '95.55%' counts up with the same decimals
+  const v = parseFloat(text), dec = ((text.split('.')[1] || '').match(/^\d+/) || [''])[0].length, suf = text.replace(/^[\d.,]+/, '');
+  const t0 = performance.now();
+  const tick = now => {
+    if (c.dead) return;
+    const t = Math.min(1, (now - t0) / ms);
+    el.textContent = t < 1 ? (v * (1 - Math.pow(1 - t, 3))).toFixed(dec) + suf : text;
+    if (t < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+async function pulseArrows(c, types){
+  const anims = [];
+  for (const t of types){
+    anims.push(c.start(E.hot[t], [{ opacity:0 }, { opacity:1, offset:.35 }, { opacity:0 }], { duration:1000, easing:'ease-in-out' }));
+    if (!REDUCED) anims.push(c.start(E.hotpk[t], [{ opacity:0, transform:'translateY(0)' }, { opacity:1, offset:.15 }, { opacity:1, transform:'translateY(-46px)', offset:.8 }, { opacity:0, transform:'translateY(-60px)' }], { duration:1000, easing:'ease-in' }));
+    const tv = TYPEVAR[t];
+    anims.push(c.start(E.colEl[t], [{ boxShadow:E.colShadow }, { boxShadow:`0 0 0 5px ${rgba(tv, .14)},0 16px 36px ${rgba(tv, .18)}`, offset:.8 }, { boxShadow:E.colShadow }], { duration:1300 }));
+  }
+  await Promise.all(anims.map(a => c.done(a)));
+}
+async function moveCards(c, ids, ms, stagger){
+  if (!ids.length){ c.commit(); return; }
+  if (REDUCED){
+    const outs = ids.map(id => c.start(E.cards[id].el, [{ opacity:1 }, { opacity:0 }], { duration:200, fill:'forwards' }));
+    await Promise.all(outs.map(a => c.done(a)));
+    c.commit();
+    const after = placements(c.w);
+    const ins = ids.filter(id => after[id] && after[id].vis).map(id => c.start(E.cards[id].el, [{ opacity:0 }, { opacity:1 }], { duration:300 }));
+    outs.forEach(a => a.cancel());
+    await Promise.all(ins.map(a => c.done(a)));
+    return;
+  }
+  c.move(ms);
+  let maxD = 0;
+  if (stagger){
+    const pl = placements(c.w);
+    ids.slice().sort((a, b) => pl[a].x - pl[b].x).forEach((id, i) => { E.cards[id].el.style.transitionDelay = (i * 45) + 'ms'; maxD = i * 45; });
+  }
+  c.commit();
+  await c.wait(ms + maxD + 30);
+  ids.forEach(id => { E.cards[id].el.style.transitionDelay = ''; });
+}
+async function flyCard(c, id, a, z){                       // the card arcs up from its bay into its grid slot
+  const el = E.cards[id].el, tv = TYPEVAR[TASK(id).type];
+  if (REDUCED || !a || !z){ await moveCards(c, [id], 0); return; }
+  c.move(0); c.commit(); el.classList.add('front');
+  const P1 = { x:a.x, y:z.y + 90 }, dir = Math.sign(z.x - a.x), N = 14, kf = [];
+  for (let i = 0; i <= N; i++){
+    const t = i / N, u = 1 - t;
+    const x = u*u*a.x + 2*u*t*P1.x + t*t*z.x, y = u*u*a.y + 2*u*t*P1.y + t*t*z.y;
+    const s = 1 + .08 * Math.sin(Math.PI * t), r = dir * 3.5 * Math.sin(Math.PI * t);
+    kf.push({ transform:`translate(${x.toFixed(1)}px,${y.toFixed(1)}px) rotate(${r.toFixed(2)}deg) scale(${s.toFixed(3)})`, boxShadow: i === 0 || i === N ? E.cardShadow : E.cardLift });
+  }
+  await c.done(c.start(el, kf, { duration:980, easing:'cubic-bezier(.45,.05,.25,1)' }));
+  c.start(E.cards[id].ring, [{ boxShadow:`0 0 0 0 ${rgba(tv, .5)}` }, { boxShadow:`0 0 0 18px ${rgba(tv, 0)}` }], { duration:650, easing:'ease-out' });
+  await c.wait(260);
+  el.classList.remove('front');
+}
+function countTo(c, key, from, to, ms = 420){
+  const el = E.badges[key].num;
+  pop(c, E.badges[key].el, 1.16, 440);
+  return new Promise(res => {
+    const t0 = performance.now();
+    const tick = now => { if (c.dead) return; const t = Math.min(1, (now - t0) / ms); el.textContent = Math.round(from + (to - from) * easeInOut(t)); t < 1 ? requestAnimationFrame(tick) : res(); };
+    requestAnimationFrame(tick);
+  }).then(c.check);
+}
+function linePath(a, b){
+  let el = document.getElementById(`ln-${a}-${b}`); if (el) return { el, reverse:false };
+  el = document.getElementById(`ln-${b}-${a}`); if (el) return { el, reverse:true };
+  throw new Error(`No line between ${a} and ${b}`);
+}
+const pointAt = (p, f) => { const L2 = p.el.getTotalLength(); return p.el.getPointAtLength((p.reverse ? 1 - f : f) * L2); };
+function dotAt(p, f){ const pt = pointAt(p, f); E.dot.setAttribute('transform', `translate(${pt.x.toFixed(1)} ${pt.y.toFixed(1)})`); }
+function travel(c, p, ms){
+  return new Promise(res => {
+    const t0 = performance.now();
+    const tick = now => {
+      if (c.dead) return;
+      const t = Math.min(1, (now - t0) / ms), e = easeInOut(t);
+      dotAt(p, e);
+      E.trail.forEach((tc, i) => {                              // comet trail behind the dot
+        const f = Math.max(0, e - (i + 1) * .035), pt = pointAt(p, f);
+        tc.setAttribute('cx', pt.x.toFixed(1)); tc.setAttribute('cy', pt.y.toFixed(1));
+        tc.style.opacity = t < 1 && f > 0 ? (.42 - i * .09) : 0;
+      });
+      t < 1 ? requestAnimationFrame(tick) : res();
+    };
+    requestAnimationFrame(tick);
+  }).then(c.check);
+}
+async function shipPlay(c, b){
+  const w = c.w, r = resolveShip(w, b), p = linePath(r.from, r.to);
+  const cv = b.urgent ? '--cure' : '--supply', col = cssHex(cv);
+  E.dotC.style.fill = col; E.dotR.style.fill = col; E.route.style.stroke = col; E.ripple.style.stroke = col;
+  E.trail.forEach(t => { t.style.fill = col; });
+  E.dotT.textContent = r.qty > 1 ? `${b.part} ×${r.qty}` : b.part;
+  E.dotR.setAttribute('width', Math.ceil(E.dotT.getComputedTextLength() + 22));
+  const A = pointAt(p, 0), B = pointAt(p, 1), RL = Math.hypot(B.x - A.x, B.y - A.y);
+  // 1 · the route lights up from source to destination
+  E.route.setAttribute('d', `M${A.x.toFixed(1)} ${A.y.toFixed(1)} L${B.x.toFixed(1)} ${B.y.toFixed(1)}`);
+  const route = c.start(E.route, [{ opacity:.35, strokeDasharray:`${RL} ${RL}`, strokeDashoffset:RL }, { opacity:.35, strokeDasharray:`${RL} ${RL}`, strokeDashoffset:0 }], { duration:REDUCED ? 1 : 420, easing:'ease-out', fill:'forwards' });
+  await c.done(route);
+  // 2 · picked: the dot appears, the source pulses and its stock counts down
+  dotAt(p, REDUCED ? 1 : 0); w.dotOn = true;
+  if (E.nodes[r.from]) pop(c, E.nodes[r.from], 1.06, 420);
+  if (r.src){
+    const a = w.stock[r.src]; w.stock[r.src] = a - r.qty; c.commit();
+    E.badges[r.src].num.textContent = a;
+    await countTo(c, r.src, a, a - r.qty); c.commit(); await c.wait(200);
+  } else { c.commit(); await c.wait(320); }
+  // 3 · travel along the real line
+  if (!REDUCED) await travel(c, p, b.urgent ? 1200 : 1500); else await c.wait(500);
+  // 4 · arrival: ripple at the destination, route fades, stock counts up
+  w.dotOn = false; c.commit();
+  E.ripple.setAttribute('cx', B.x.toFixed(1)); E.ripple.setAttribute('cy', B.y.toFixed(1));
+  if (!REDUCED) c.start(E.ripple, [{ opacity:.85, transform:'scale(.4)' }, { opacity:0, transform:'scale(2.8)' }], { duration:700, easing:'ease-out' });
+  if (E.nodes[r.to]) pop(c, E.nodes[r.to], 1.1, 420);
+  const fade = c.start(E.route, [{ opacity:.35 }, { opacity:0 }], { duration:420 }); route.cancel();
+  await c.wait(280);
+  if (r.dst){
+    const a = w.stock[r.dst]; w.stock[r.dst] = a + r.qty;
+    await countTo(c, r.dst, a, a + r.qty); c.commit();
+  }
+  await c.done(fade);
+}
+async function revealMap(c){                               // the network draws itself out from the central hub
+  const anims = [], hubs = Object.keys(SCENARIO.network.hubs);
+  E.mapLines.querySelectorAll('path:not(.att)').forEach(ln => {
+    const L2 = ln.getTotalLength(), tier = ln.id.startsWith('ln-central-') ? 0 : 1;
+    anims.push(c.start(ln, [{ strokeDasharray:`${L2} ${L2}`, strokeDashoffset:L2 }, { strokeDasharray:`${L2} ${L2}`, strokeDashoffset:0 }], { duration:420, delay:200 + tier * 240, easing:'ease-out', fill:'backwards' }));
+  });
+  for (const [id, el] of Object.entries(E.nodes)){
+    const tier = id === 'central' ? 0 : hubs.includes(id) ? 1 : 2;
+    anims.push(c.start(el, [{ opacity:0, scale:'.82' }, { opacity:1, scale:'1' }], { duration:380, delay:120 + tier * 220, easing:'cubic-bezier(.2,.8,.2,1)', fill:'backwards' }));
+  }
+  Object.values(E.rows).filter(r => !r.el.classList.contains('hide')).forEach((r, i) =>
+    anims.push(c.start(r.el, [{ opacity:0, translate:'-28px 0' }, { opacity:1, translate:'0 0' }], { duration:380, delay:160 + i * 50, easing:'ease-out', fill:'backwards' })));
+  Object.values(E.agents).forEach(a => anims.push(c.start(a.el, [{ opacity:0, translate:'0 -12px' }, { opacity:1, translate:'0 0' }], { duration:400, delay:640, fill:'backwards' })));
+  await Promise.all(anims.map(a => c.done(a)));
+}
+async function clockBeat(c, ck){
+  if (ck.day !== c.w.clock.day){
+    const hl = c.start(E.clock, [{ backgroundColor:cssHex('--text') }, { backgroundColor:cssHex('--supply'), offset:.2 }, { backgroundColor:cssHex('--supply'), offset:.75 }, { backgroundColor:cssHex('--text') }], { duration:REDUCED ? 1200 : 2400 });
+    const from = clockDate(c.w.clock.day), to = clockDate(ck.day);
+    const n = from && to ? Math.round((to - from) / 864e5) : 0;
+    if (!REDUCED && n > 0 && n <= 14){                        // fast-forward through the days
+      E.sep.style.display = E.time.style.display = 'none';
+      for (let i = 1; i <= n; i++){
+        E.day.textContent = fmtDate(addDays(from, i), true);
+        c.start(E.day, [{ opacity:.2, translate:'0 -14px' }, { opacity:1, translate:'0 0' }], { duration:120, easing:'ease-out' });
+        await c.wait(150);
+      }
+    }
+    c.w.clock = ck; c.commit();
+    if (!REDUCED) await c.done(c.start(E.clock, [{ scale:'1' }, { scale:'1.1' }, { scale:'1' }], { duration:480, easing:'ease-out' }));
+    await c.done(hl);
+  } else await swapText(c, E.time, () => { c.w.clock = ck; }, true);
+}
+
+/* ── Timeline runner ────────────────────────────────────────────────────── */
+let state, cur = 0, run = null;
+
+function makeCtx(w, draw = render){
+  const c = { w, dead:false, anims:new Set(), timers:new Set() };
+  c.check = () => { if (c.dead) throw CANCEL; };
+  c.commit = () => { c.check(); draw(c.w); };
+  c.move = ms => E.stage.style.setProperty('--mv', ms + 'ms');
+  c.wait = ms => new Promise(res => { const id = setTimeout(() => { c.timers.delete(id); res(); }, ms); c.timers.add(id); }).then(c.check);
+  c.start = (el, kf, opt) => { const a = el.animate(kf, opt); c.anims.add(a); return a; };
+  c.done = a => a.finished.then(() => {}, () => {}).then(c.check);
+  c.kill = () => { c.dead = true; c.timers.forEach(clearTimeout); c.anims.forEach(a => a.cancel()); };
+  return c;
+}
+
+async function play(n){
+  const c = makeCtx(clone(state)); run = c; cur = n;
+  const t0 = performance.now(), target = buildState(n), step = STEPS[n];
+  c.w.step = n; updateNotes();
+  try {
+    c.commit();
+    const ck = parseClock(step.clock);
+    if (ck && (ck.day !== c.w.clock.day || ck.time !== c.w.clock.time)){ await clockBeat(c, ck); await c.wait(GAP); }
+    if (c.w.dialog !== target.dialog && !step.beats.some(b => b.t === 'dialog')){ await BEATS.dialog.play(c, { open:target.dialog }); await c.wait(GAP); }
+    for (const b of step.beats){ await BEATS[b.t].play(c, b); await c.wait(GAP); }
+  } catch (e){ if (e !== CANCEL) console.error(e); }
+  if (c.dead) return;
+  if (DEBUG && JSON.stringify(c.w) !== JSON.stringify(target)) console.warn('Step', n, 'animated state differs from replayed state', c.w, target);
+  run = null; state = target; render(state);
+  stepDone(performance.now() - t0);
+}
+function finishRun(){ run.kill(); run = null; state = buildState(cur); renderInstant(state); stepDone(0); }
+function next(){
+  if (run){ finishRun(); return; }                       // first press completes the current step
+  if (cur < STEPS.length - 1) play(cur + 1);
+}
+function prev(){
+  if (run){ run.kill(); run = null; }
+  if (cur > 0) cur--;
+  state = buildState(cur); renderInstant(state); stepDone(0);
+}
+function reset(){ if (res.on) exitRes(); if (run){ run.kill(); run = null; } cur = 0; state = buildState(0); renderInstant(state); stepDone(0); }
+function toggleDialog(){ if (run) finishRun(); state.dialog = !state.dialog; render(state); }
+function openSupply(){
+  if (run) finishRun();
+  if (state.invite && !state.dialog) next();             // at the "click me" moment, opening = the next step
+  else toggleDialog();
+}
+
+/* ── Resources mode: extra pages outside the show (M or the Resources button) ── */
+let res = { on:false, idx:0, page:null, metricsShown:0, flowShown:0, iotShown:0 }, resRun = null;
+const RES_COUNT = { iot:'iotShown', metrics:'metricsShown', flow:'flowShown' };
+const RES_FULL = { iot:() => SCENARIO.iot.nodes.length, metrics:() => SCENARIO.results.rows.length, flow:() => SCENARIO.flow.stages.length + 1 };
+const RES_PLAY = { iot:c => iotPlay(c), metrics:c => BEATS.metrics.play(c), flow:c => BEATS.flow.play(c) };
+const RES_INFO = { iot:() => [SCENARIO.iot.title, SCENARIO.iot.say], metrics:() => [SCENARIO.results.title, SCENARIO.results.say], flow:() => [SCENARIO.flow.question, SCENARIO.flow.say] };
+
+function renderRes(r){
+  const S = SCENARIO;
+  E.stage.classList.toggle('res', r.on);
+  E.resBtnLabel.textContent = r.on ? S.labels.backToShow : S.labels.resources;
+  E.rdots.forEach((d, i) => { d.className = 'dot' + (i < r.idx ? ' past' : i === r.idx ? ' now' : ''); });
+  const on = id => r.on && r.page === id;
+  E.pgIot.classList.toggle('on', on('iot')); E.pgMetrics.classList.toggle('on', on('metrics')); E.pgFlow.classList.toggle('on', on('flow'));
+  E.inodes.forEach((el, i) => el.classList.toggle('on', r.iotShown >= i + 1));
+  E.iconns.forEach(k => k.el.classList.toggle('on', r.iotShown >= k.item + 1));
+  E.mrows.forEach((el, i) => el.classList.toggle('on', i < r.metricsShown));
+  E.mvals.forEach((m, i) => { m.textContent = S.results.rows[i][1]; });
+  E.fq.classList.toggle('on', r.flowShown >= 1); E.fqText.innerHTML = rich(`“${S.flow.question}”`);
+  E.fstages.forEach((el, i) => el.classList.toggle('on', r.flowShown >= i + 2));
+  E.farrows.forEach((el, i) => el.classList.toggle('on', r.flowShown >= i + 2));
+}
+function renderResInstant(r){ E.stage.classList.add('instant'); renderRes(r); void E.stage.offsetWidth; E.stage.classList.remove('instant'); }
+function packetAlong(c, path, dot, ms){                      // a data packet travels the connector once
+  const L2 = path.getTotalLength(), t0 = performance.now();
+  const tick = now => {
+    if (c.dead){ dot.style.opacity = 0; return; }
+    const t = Math.min(1, (now - t0) / ms), p = path.getPointAtLength(easeInOut(t) * L2);
+    dot.setAttribute('cx', p.x.toFixed(1)); dot.setAttribute('cy', p.y.toFixed(1)); dot.style.opacity = t < 1 ? 1 : 0;
+    if (t < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+async function iotPlay(c){
+  for (let i = 0; i < SCENARIO.iot.nodes.length; i++){
+    c.w.iotShown = i + 1; c.commit();
+    if (!REDUCED) E.iconns.filter(k => k.item === i).forEach(k => packetAlong(c, k.motion, k.dot, 700));
+    await c.wait(1150);
+  }
+}
+function resKill(){ if (resRun){ resRun.kill(); resRun = null; } }
+function resFinish(){ resKill(); res[RES_COUNT[res.page]] = RES_FULL[res.page](); renderResInstant(res); updateNotes(); }
+function resShow(idx, animate){
+  resKill();
+  const pg = RES_PAGES[idx];
+  if (!animate){ res.idx = idx; res.page = pg; res[RES_COUNT[pg]] = RES_FULL[pg](); renderRes(res); updateNotes(); return; }
+  res[RES_COUNT[pg]] = 0; renderResInstant(res);             // reset the incoming page while it is hidden
+  res.idx = idx; res.page = pg; updateNotes();
+  const c = makeCtx(res, renderRes); resRun = c;
+  (async () => {
+    try { c.commit(); await c.wait(650); await RES_PLAY[pg](c); }
+    catch (e){ if (e !== CANCEL) console.error(e); }
+    if (!c.dead) resRun = null;
+  })();
+}
+function enterRes(){
+  if (run) finishRun();
+  if (auto){ auto = false; clearTimeout(autoT); }
+  res.on = true; res.page = null; resShow(0, true);
+}
+function exitRes(){ resKill(); res.on = false; renderRes(res); updateNotes(); }
+function toggleRes(){ if (res.on) exitRes(); else enterRes(); }
+function resNext(){ if (resRun){ resFinish(); return; } if (res.idx < RES_PAGES.length - 1) resShow(res.idx + 1, true); }
+function resPrev(){ if (res.idx > 0) resShow(res.idx - 1, false); else resFinish(); }
+
+/* ── Presenter extras: autoplay, notes, captions, fullscreen ────────────── */
+let auto = false, autoT = null, toastT = null;
+function stepDone(animMs){ updateNotes(); scheduleAuto(animMs); }
+function scheduleAuto(animMs){
+  clearTimeout(autoT); if (!auto) return;
+  if (cur >= STEPS.length - 1){ auto = false; return; }
+  autoT = setTimeout(() => { if (auto && !run && !res.on) next(); }, Math.max(HOLD - animMs, REST));
+}
+function setAuto(on){
+  auto = on; clearTimeout(autoT); toast(on ? 'Autoplay on' : 'Autoplay off');
+  if (on){ if (cur >= STEPS.length - 1) reset(); autoT = setTimeout(() => { if (auto && !run) next(); }, cur === 0 ? FIRST : REST); }
+}
+function toast(msg){ E.toast.textContent = msg; E.toast.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => E.toast.classList.remove('on'), 1400); }
+function updateNotes(){
+  if (res.on && res.page){
+    const [cap, say] = RES_INFO[res.page]();
+    $('#notesH').textContent = `${SCENARIO.labels.resources} · page ${res.idx + 1} of ${RES_PAGES.length}`;
+    $('#notesC').textContent = cap; $('#notesS').textContent = say; return;
+  }
+  const t = T[cur] || {}, s = buildState(cur);
+  $('#notesH').textContent = `Step ${cur} of ${STEPS.length - 1} · ${s.clock.day}${s.clock.time ? ' · ' + s.clock.time : ''}`;
+  $('#notesC').textContent = s.dialog ? s.caption : s.qcap;
+  $('#notesS').textContent = t.say || '';
+}
+function hideHint(){ E.hint.classList.add('gone'); }
+function fit(){
+  const k = Math.min(innerWidth / 1920, innerHeight / 1080);
+  E.stage.style.transform = `translate(${(innerWidth - 1920 * k) / 2}px,${(innerHeight - 1080 * k) / 2}px) scale(${k})`;
+}
+
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target === E.bar && e.key === 'Enter') return;
+  if ((e.target === E.resetBtn || e.target === E.resBtn) && (e.key === 'Enter' || e.key === ' ')) return;
+  const k = e.key;
+  if (res.on){                                              // Resources mode keys
+    if (k === 'ArrowRight' || k === ' ' || k === 'PageDown'){ e.preventDefault(); if (!e.repeat) resNext(); }
+    else if (k === 'ArrowLeft' || k === 'PageUp'){ e.preventDefault(); if (!e.repeat) resPrev(); }
+    else switch (k.toLowerCase()){
+      case 'escape': case 'm': exitRes(); break;
+      case 'r': reset(); break;
+      case 'n': E.notes.classList.toggle('on'); break;
+      case 'f': if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); break;
+      default: return;
+    }
+    hideHint(); return;
+  }
+  if (k === 'ArrowRight' || k === ' ' || k === 'PageDown'){ e.preventDefault(); if (!e.repeat) next(); }
+  else if (k === 'ArrowLeft' || k === 'PageUp'){ e.preventDefault(); if (!e.repeat) prev(); }
+  else switch (k.toLowerCase()){
+    case 'r': reset(); break;
+    case 's': openSupply(); break;
+    case 'm': enterRes(); break;
+    case 'a': setAuto(!auto); break;
+    case 'c': E.dlg.classList.toggle('nocap'); break;
+    case 'n': E.notes.classList.toggle('on'); break;
+    case 'f': if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); break;
+    default: return;
+  }
+  hideHint();
+});
+addEventListener('resize', fit);
+
+/* Expose a tiny handle for rehearsal tooling (no effect on the show). */
+window.PitCrew = { next, prev, reset, buildState, get step(){ return cur; }, get busy(){ return !!run || !!resRun; }, get state(){ return state; }, get res(){ return res; },
+  resInstant(){ renderResInstant(res); },
+  instant(){ renderInstant(state); } };
+
+build(); fit();
+state = buildState(0); renderInstant(state); renderResInstant(res); updateNotes();
+</script>
+</body>
+</html>
