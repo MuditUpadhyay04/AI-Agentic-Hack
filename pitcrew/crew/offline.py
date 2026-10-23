@@ -9,7 +9,7 @@ from ..mill import WALL_NAMES
 from ..world import World
 
 STAGES = {"Sentinel": "Monitor", "Diagnostician": "Analyze", "Race Engineer": "Plan", "Quartermaster": "Execute",
-          "Dispatcher": "Execute", "Kaizen": "Improve", "Onboarder": "Grow", "Foreman": "Human"}
+          "Dispatcher": "Execute", "Kaizen": "Improve", "Onboarder": "Grow", "Foreman": "Human", "Comms": "Notify"}
 
 
 class Transcript:
@@ -59,6 +59,27 @@ def mill_plan(w: World) -> dict:
         + ". Needs the foreman: it changes how the machine runs."), i)
     return {"asset": "VM-07", "turns": tr.turns, "options": p["options"], "recommendation": rec,
             "assumptions": p["assumptions"], "needs_approval": True}
+
+
+def mill_alert(w: World) -> dict:
+    """Comms: tell the on-shift operator what to check, from the Sentinel's numbers (no model needed)."""
+    tr = Transcript(w)
+    s = w.read_mill()
+    n = s["parts_until_wall"]
+    i = tr.as_agent("Comms")
+    a = w.send_alert(
+        "VM-07", "SEV-2", ["Line 2 operator (on shift)", "Maintenance lead"],
+        f"[SEV-2] VM-07 reaches its power limit in ~{4 * n} min. Check the insert",
+        f"VM-07 is drawing {s['power_w'] / 1000:.1f} kW against its 9.0 kW power limit after the new steel lot. "
+        f"Torque is creeping {s['creep']} Nm per part, so the limit is about {n} parts (~{4 * n} min) away. "
+        "The crew is preparing a plan for the foreman; you do not need to change any setting.",
+        ["Look at the insert on VM-07: chipping or a built-up edge?",
+         "Listen for chatter at the spindle; stop the cycle if you hear it.",
+         "Confirm the loaded bar is from the new steel lot."])
+    tr.speak("Comms", (f"Sentinel flagged VM-07 at {s['power_w'] / 1000:.1f} kW. "
+                       f"Emailed the Line 2 operator and the maintenance lead ({a['severity']}): check the insert "
+                       f"within ~{4 * n} min. Escalates by SMS after {a['escalate_after_min']} min without an ack."), i)
+    return {"turns": tr.turns, "alert": a}
 
 
 def mill_execute(w: World, plan: dict, who: str = "Foreman") -> dict:

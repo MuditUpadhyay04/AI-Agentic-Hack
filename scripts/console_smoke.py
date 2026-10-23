@@ -17,14 +17,22 @@ import websockets
 
 PLOTS = ["mill_signals", "mill_envelope", "fleet_map", "tower_chart", "tower_options_plot", "tower_energy_plot",
          "kaizen_lots", "kaizen_futures"]
-UIS = ["mill_status", "mill_transcript", "mill_approval", "tower_transcript", "tower_option_cards", "tower_approval",
+UIS = ["mill_status", "mill_transcript", "mill_approval", "mill_incident", "mill_stats", "mill_wo", "mill_health",
+       "plant_chip", "crew_list", "alert_badge", "alert_stats", "incident_badge", "incident_stats", "incident_table", "incident_detail", "alert_list", "alert_detail", "tower_transcript", "tower_option_cards", "tower_approval",
        "kaizen_tiles", "kaizen_rules", "kaizen_transcript", "kaizen_dcr", "grow_passport", "grow_transcript",
        "slot_buttons"]
 
 STEPS = [
-    ("mill_change", {"mill_change": 1}, ["mill_status", "mill_signals"]),
+    ("mill_change", {"mill_change": 1}, ["mill_status", "mill_signals", "mill_incident", "alert_list"]),
+    ("alert_escalate", {"alert_escalate": 1}, ["alert_detail", "alert_stats"]),
+    ("alert_ack", {"alert_ack": 1}, ["alert_detail", "alert_badge"]),
     ("mill_assess", {"mill_assess": 1}, ["mill_transcript", "mill_approval", "mill_envelope"]),
-    ("mill_approve", {"mill_approve": 1}, ["mill_transcript", "mill_approval"]),
+    ("mill_pick_stop", {"mill_pick": "stop_now"}, ["mill_approval", "mill_envelope"]),
+    ("mill_pick_lc", {"mill_pick": "lift_and_coast"}, ["mill_approval"]),
+    ("mill_approve", {"mill_approve": 1}, ["mill_transcript", "mill_wo", "mill_incident", "mill_stats"]),
+    ("mill_revert", {"mill_revert": 1}, ["mill_transcript", "mill_approval"]),
+    ("mill_approve_2", {"mill_approve": 2}, ["incident_table", "incident_detail", "incident_stats"]),
+    ("incident_sel", {"incident_sel": "INC-209"}, ["incident_detail"]),
     ("tower_assess", {"tower_assess": 1}, ["tower_transcript", "tower_approval"]),
     ("tower_approve", {"tower_approve": 1}, ["tower_transcript", "tower_approval"]),
     ("kaizen_run", {"kaizen_run": 1}, ["kaizen_transcript", "kaizen_dcr", "kaizen_rules"]),
@@ -69,12 +77,12 @@ async def run(port: int) -> int:
                 for k, v in (msg.get("errors") or {}).items():
                     errors[k] = v
 
-        await drain(25)
+        await drain(15)
         print(f"initial outputs: {sorted(seen)}")
         for name, data, want in STEPS:
             await ws.send(json.dumps({"method": "update", "data": data}))
             before = set(seen)
-            await drain(20)
+            await drain(8)
             got = [w for w in want if w in seen]
             print(f"{name:>16}: outputs {got} {'(new: ' + ', '.join(sorted(set(seen) - before)) + ')' if set(seen) - before else ''}")
     if errors:

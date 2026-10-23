@@ -18,7 +18,7 @@ from . import mill as millmod
 from .decide import TowerEconomics, diagnose, park_and_price
 from .futures import ranking
 from .kaizen import design_change_request, lot_analysis, rediscover_ai4i, time_to_alarm_by_lot, tracking_tradeoff
-from .ops import Ops, policy_check
+from .ops import ALERT_POLICY, Ops, policy_check
 from .passport import MANUALS, from_manual, install_slot, manuals, sign
 from .tower import Fleet
 
@@ -56,6 +56,7 @@ class World:
                            "creep": 0.3, "variant": "L", "parts_to_window": 30, "setpoint": "1500 rpm, feed 100%"}
         self.tower_modes: dict = {}
         self.econ = TowerEconomics()
+        self.alerts: list[dict] = []
 
     @cached_property
     def fleet(self) -> Fleet:
@@ -163,6 +164,33 @@ class World:
 
     def approve(self, ref: str, who: str = "foreman") -> dict:
         return self._rec("approve", {"ref": ref, "who": who}, self.ops.approve(ref, who))
+
+    # ------------------------------------------------------------------ comms (alerts to the floor)
+    def send_alert(self, ref: str, severity: str, to: list, subject: str, body: str, checks: list) -> dict:
+        """Email (simulated) the people the alert policy names; external mail waits for a person."""
+        rule = ALERT_POLICY.get(severity, ALERT_POLICY["SEV-2"])
+        external = severity == "External"
+        alert = {"id": f"AL-{len(self.alerts) + 1:03d}", "ref": ref, "severity": severity, "to": to,
+                 "subject": subject, "body": body, "checks": checks, "channel": rule["channel"],
+                 "status": "needs approval" if external else "awaiting ack", "sent_at": None if external
+                 else time.strftime("%H:%M:%S"), "acked_by": None, "escalated": False,
+                 "escalate_after_min": rule["escalate_min"], "rule": rule}
+        self.alerts.append(alert)
+        return self._rec("send_alert", {"ref": ref, "severity": severity, "to": to}, alert)
+
+    def ack_alert(self, alert_id: str, who: str) -> dict:
+        a = next((x for x in self.alerts if x["id"] == alert_id), None)
+        if a is None:
+            return self._rec("ack_alert", {"id": alert_id}, {"error": f"{alert_id} not found"})
+        a.update(status="acknowledged", acked_by=who, acked_at=time.strftime("%H:%M:%S"))
+        return self._rec("ack_alert", {"id": alert_id, "who": who}, a)
+
+    def escalate_alert(self, alert_id: str) -> dict:
+        a = next((x for x in self.alerts if x["id"] == alert_id), None)
+        if a is None:
+            return self._rec("escalate_alert", {"id": alert_id}, {"error": f"{alert_id} not found"})
+        a.update(status="escalated", escalated=True, escalated_at=time.strftime("%H:%M:%S"))
+        return self._rec("escalate_alert", {"id": alert_id}, a)
 
     # ------------------------------------------------------------------ improve
     def kaizen_rules(self) -> dict:
