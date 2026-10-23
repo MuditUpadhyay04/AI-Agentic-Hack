@@ -11,7 +11,7 @@ cd /workshop
 # upload pitcrew-v0.1.0.zip through the VS Code explorer (drag and drop), then:
 unzip -q pitcrew-v0.1.0.zip && cd pitcrew
 pip install -r requirements.txt
-python -m pytest -q                       # 25 passed
+python -m pytest -q                       # 32 passed
 curl -fsSL https://atx.rahman.dev/hackathon-kit.zip -o hackathon-kit.zip && unzip -qo hackathon-kit.zip
 python infer.py                           # the kit's Bedrock smoke test: note which model id works
 python scripts/fetch_data.py              # real AI4I file + DFW wind

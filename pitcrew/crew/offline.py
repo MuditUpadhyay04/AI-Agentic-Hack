@@ -9,7 +9,8 @@ from ..mill import WALL_NAMES
 from ..world import World
 
 STAGES = {"Sentinel": "Monitor", "Diagnostician": "Analyze", "Race Engineer": "Plan", "Quartermaster": "Execute",
-          "Dispatcher": "Execute", "Kaizen": "Improve", "Onboarder": "Grow", "Foreman": "Human", "Comms": "Notify"}
+          "Dispatcher": "Execute", "Kaizen": "Improve", "Onboarder": "Grow", "Foreman": "Human", "Comms": "Notify",
+          "Sourcing": "Supply"}
 
 
 class Transcript:
@@ -138,7 +139,7 @@ def tower_plan(w: World, tid: int = 7) -> dict:
         pct=round(100 * (p["value"] - 1)), deg=p["value"], val=p["value"], detector=p["detector"])
     query = {"friction": "re-grease slew drive grease", "backlash": "bolts re-torque reversal backlash",
              "grease_water": "seals leaks condensation", "acoustic": "bearing acoustic emission replace drive"}
-    m = w.search_manual(query.get(p["detector"], "slew drive"), manual="janta_tower_drive_public.md")
+    m = w.search_manual(query.get(p["detector"], "slew drive"), manual="tower_drive_manual.md")
     rul = d.get("rul") or {}
     rul_txt = (f" Trend alone says ~{rul['p50']:.0f} days to the limit (P10 {rul['p10']:.0f})."
                if rul.get("p50") is not None and rul["p50"] < 120 else
@@ -231,7 +232,7 @@ def improve(w: World) -> dict:
     top = sf["slots"][0] if sf["slots"] else None
     tr.speak("Kaizen", (
         f"Two findings for R&D. Step tracking in 15 deg steps gives up {trade['energy_loss_step15_pct']}% of a "
-        f"year's energy (Shadow Calculator field model) and cuts drive starts {trade['starts_cut_pct']:.0f}%. "
+        f"year's energy (field energy model) and cuts drive starts {trade['starts_cut_pct']:.0f}%. "
         f"And of {sf['failures']} past failures, today's sensors flagged {sf['caught_with_todays_sensors']} a week or "
         f"more ahead - nobody was watching: a crew is worth ~{_money(sf['crew_value_usd_per_tower_year'])} per "
         f"tower-year before any new hardware."
@@ -239,7 +240,7 @@ def improve(w: World) -> dict:
            f"tower-year for {_money(top['unit_usd'])} of hardware." if top else "")), i)
     i = tr.as_agent("Kaizen")
     dcr = w.design_change_request()
-    tr.speak("Kaizen", f"Drafted {len(dcr['items'])} design changes for TR-09 for engineering to review.", i)
+    tr.speak("Kaizen", f"Drafted {len(dcr['items'])} design changes for ST-2 for engineering to review.", i)
     return {"turns": tr.turns, "rules": rules, "lots": lots, "futures": sf, "dcr": dcr, "tracking": trade}
 
 
@@ -263,3 +264,57 @@ def grow_sign(w: World, asset_id: str, who: str = "Foreman") -> dict:
     r = w.sign_passport(asset_id, who)
     tr.speak("Onboarder", f"{asset_id} signed by {who}. Started {', '.join(r['agents_started'])}.", i)
     return {"turns": tr.turns, "result": r}
+
+
+# ---------------------------------------------------------------------------- sourcing
+_ROUTE = {"local": "from {local}", "central": "{local} had none, so the central hub sent stock first",
+          "lateral": "{local} and the central hub had none, so another local hub sent it"}
+
+
+def sourcing(w: World) -> dict:
+    """Urgent jobs first (cure, then prevention), then refill the local hubs, then refill the central hub."""
+    tr = Transcript(w)
+    i = tr.as_agent("Sourcing")
+    q = w.job_queue()
+    urgent = [j for j in q["jobs"] if j["kind"] in ("cure", "prevention") and j["status"] == "open"]
+    lines, parts = [], []
+    for j in urgent:
+        r = w.fulfil_job(j["job_id"])
+        if j["pn"] not in parts:
+            parts.append(j["pn"])
+        if r["route"] == "buy":
+            lines.append(f"{j['job_id']} ({j['pn']} to {j['site']}): no hub had it; {r['po']['po']} to "
+                         f"{r['po']['vendor']}, arrives {r['po']['arrives']}.")
+            continue
+        local = w.network.sites[j["site"]]
+        lines.append(f"{j['job_id']} ({j['kind']}, {j['pn']} to site {j['site']}): "
+                     f"{_ROUTE[r['route']].format(local=local)}; {local} now holds {r['local_after']}.")
+    tr.speak("Sourcing", " ".join(lines) or "No urgent jobs need parts.", i)
+
+    i = tr.as_agent("Sourcing")
+    lines, plans, pos = [], [], []
+    for pn in parts:
+        rs = w.restock_local_hubs(pn)
+        for m in rs["moves"]:
+            lines.append(f"Central hub sent {m['qty']} x {pn} to {m['to']} ({m['why']}).")
+        p = w.plan_central_order(pn)
+        if not p["needed"]:
+            lines.append(f"Central hub has {p['position']} x {pn}, above its reorder level of "
+                         f"{p['reorder_level']}: nothing to buy.")
+            continue
+        plans.append(p)
+        pick, fast = p["pick"], p["fastest"]
+        late = [o for o in p["options"] if not o["in_time"] and o["total_usd"] < pick["total_usd"]]
+        lines.append(
+            f"Central hub is down to {p['position']} x {pn} (reorder level {p['reorder_level']}): buy {p['qty']} "
+            f"by {p['need_by']} ({p['need_by_why']}). Cheapest in time: {pick['vendor']}, "
+            f"{_money(pick['total_usd'])}, arrives {pick['arrives']} (order by {pick['order_by']}). "
+            + (f"Fastest: {fast['vendor']}, {_money(fast['total_usd'])}, arrives {fast['arrives']}. "
+               if fast is not pick else "")
+            + (f"{late[0]['vendor']} is cheaper but arrives {late[0]['arrives']}, too late. " if late else "")
+            + (f"Excluded (not verified): {', '.join(x['vendor'] for x in p['excluded'])}. " if p["excluded"] else ""))
+        po = w.place_order(pn, pick["vendor"], pick["qty"])
+        pos.append(po)
+        lines.append(f"{po['po']} {po['status']}.")
+    tr.speak("Sourcing", " ".join(s.strip() for s in lines), i)
+    return {"turns": tr.turns, "plans": plans, "pos": pos, "moves": list(w.network.moves)}

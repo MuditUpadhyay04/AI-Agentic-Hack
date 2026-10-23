@@ -3,7 +3,7 @@
 | Dataset | Used for | Access | Status in repo |
 |---|---|---|---|
 | AI4I 2020 (UCI 601), 10,000 rows, CC BY 4.0 | Mill walls, Kaizen rule search | `scripts/fetch_data.py` | Seeded replica from the published rules until the real file is fetched; every output names its source |
-| Janta TR-08 energy table | Park & Price energy, step-tracking trade-off | Exported from the Shadow Calculator field model | `data/tr08_dallas_daily_kwh.csv` (clear sky, Dallas, derived numbers only) |
+| ST-1 tower energy table | Park & Price energy, step-tracking trade-off | `scripts/export_energy_table.py` (two-wing field model, placeholder tower ratings) | `data/tower_dallas_daily_kwh.csv` (clear sky, Dallas, derived numbers only) |
 | DFW weather (Iowa Mesonet ASOS, station DFW) | Fleet wind and temperature | `scripts/fetch_data.py` | Synthetic DFW-shaped weather until fetched |
 | DuraMAT emulated single-axis tracker faults (Sandia/Utah CFV Labs, 27.9 MiB parquet: tilt, motor current, stall faults) | Anchor the drive model's motor-current baseline; detect a real stall | Browser download | Not yet used — first thing to wire in if time allows |
 | NASA IMS bearings (run-to-failure) | Shape of the bearing health index | `scripts/fetch_data.py --all` (~1 GB) | Shape only (exponential growth after onset) |

@@ -6,7 +6,7 @@ Three things, each with the numbers that back it:
    failure mode, then report precision and recall. On AI4I this rediscovers the published walls, which is
    the honesty check: the Kaizen agent proposes rules a reliability engineer can read.
 2. ``lot_analysis``: failures per tower-year by supplier lot with Poisson intervals and a rate ratio.
-3. ``design_change_request``: a draft for the Design studio / Tower lab (TR-09), built from the fleet,
+3. ``design_change_request``: a draft for the Design studio / Tower lab (ST-2), built from the fleet,
    the energy table and Sensor Futures.
 """
 from __future__ import annotations
@@ -138,7 +138,7 @@ def time_to_alarm_by_lot(fleet: Fleet) -> pd.DataFrame:
 
 def tracking_tradeoff() -> dict:
     """Energy of step tracking from the engine table vs drive starts per day from the drive model."""
-    meta = json.loads((DATA / "tr08_dallas_energy_meta.json").read_text())
+    meta = json.loads((DATA / "tower_dallas_energy_meta.json").read_text())
     from .tower import DriveModel, dfw_weather
 
     m = DriveModel()
@@ -156,7 +156,7 @@ def tracking_tradeoff() -> dict:
 
 
 def design_change_request(fleet: Fleet, futures_rank: pd.DataFrame | None = None) -> dict:
-    """A draft DCR for TR-09, every claim tied to a number the crew computed."""
+    """A draft DCR for ST-2, every claim tied to a number the crew computed."""
     lots = lot_analysis(fleet)
     trade = tracking_tradeoff()
     rr = lots["rate_ratio_vs_A"].get("B") if "rate_ratio_vs_A" in lots else None
@@ -180,7 +180,7 @@ def design_change_request(fleet: Fleet, futures_rank: pd.DataFrame | None = None
     ]
     if futures_rank is not None and len(futures_rank):
         top = futures_rank.iloc[0]
-        items.append({"id": "DCR-3", "area": "Hardware (TR-09 bill of materials)",
+        items.append({"id": "DCR-3", "area": "Hardware (ST-2 bill of materials)",
                       "change": f"Add a slot and harness for: {top['slot']}",
                       "evidence": f"Replaying {int(top['of_failures'])} fleet failures: it turns "
                                   f"{int(top['failures_turned_planned'])} more into planned repairs, worth about "
@@ -192,5 +192,5 @@ def design_change_request(fleet: Fleet, futures_rank: pd.DataFrame | None = None
                   "evidence": "Park & Price Monte Carlo: stowing earlier cuts the stall risk of a flagged drive before the "
                               "technician arrives at almost no energy cost in shoulder months.",
                   "test": "Enable on flagged towers only; review after the spring storm season"})
-    return {"title": "TR-09 design-change request (draft by the Kaizen agent - engineering to review)",
+    return {"title": "ST-2 design-change request (draft by the Kaizen agent - engineering to review)",
             "items": items, "lot_table": lots.reset_index().to_dict(orient="records"), "tracking": trade}

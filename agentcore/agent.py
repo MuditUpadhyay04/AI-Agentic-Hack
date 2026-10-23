@@ -4,7 +4,7 @@ Replace the starter kit's ``agent.py`` with this file (or point the kit's deploy
 hosts the crew; the payload says which loop to run:
 
     {"action": "plan_mill"}                      Run loop, mill VM-07, stops at the approval card
-    {"action": "plan_tower", "tower_id": 7}      Run loop, Janta tower, stops at the approval card
+    {"action": "plan_tower", "tower_id": 7}      Run loop, solar tower, stops at the approval card
     {"action": "approve", "plan": {...}}         Execute after the foreman approves
     {"action": "improve"}                        Kaizen
     {"action": "grow", "manual": "lathe_l2_manual.md"}

@@ -40,7 +40,7 @@ STEPS = [
     ("tower_assess", {"tower_assess": 1}, ["tower_transcript", "tower_approval"]),
     ("tower_approve", {"tower_approve": 1}, ["tower_transcript", "tower_approval"]),
     ("kaizen_run", {"kaizen_run": 1}, ["kaizen_transcript", "kaizen_dcr", "kaizen_rules"]),
-    ("grow_read_tower", {"manual": "janta_tower_drive_public.md", "grow_read": 1}, ["grow_passport", "slot_buttons"]),
+    ("grow_read_tower", {"manual": "tower_drive_manual.md", "grow_read": 1}, ["grow_passport", "slot_buttons"]),
     ("install_ae", {"install_ae": 1}, ["slot_buttons", "grow_transcript"]),
     ("tower_42", {"tower_id": "42", "tower_assess": 2}, ["tower_transcript", "tower_chart"]),
     ("grow_sign", {"grow_sign": 1}, ["grow_passport", "grow_transcript"]),

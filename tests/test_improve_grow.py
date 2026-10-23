@@ -34,6 +34,6 @@ def test_every_manual_onboards_cleanly(name):
 
 
 def test_slot_install_unlocks_detectors():
-    p = from_manual(MANUALS / "janta_tower_drive_public.md")
+    p = from_manual(MANUALS / "tower_drive_manual.md")
     p2 = install_slot(p, "acoustic")
     assert any(s["status"] == "installed" and "acoustic" in s["unlocks"] for s in p2["slots"])

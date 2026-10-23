@@ -4,7 +4,7 @@ For a tower the crew flags, every option is priced the same way, with every inpu
 
     expected cost = energy given up (kWh x price) + P(fail before the visit) x cost of a failure + visit cost
 
-- Energy comes from the TR-08 table exported from the Shadow Calculator's field model (``data/``): tracking,
+- Energy comes from the ST-1 table exported from the field energy model (``data/``): tracking,
   15 deg step tracking, and parked at the best fixed azimuth *for those calendar days*.
 - P(fail before the visit) is a weather Monte Carlo of the drive model under each tracking mode (``tower.project``).
 - A failure costs a new drive, a crew and lift, an emergency truck roll, and the energy lost while the tower
@@ -28,7 +28,7 @@ DATA = Path(__file__).resolve().parents[1] / "data"
 @dataclass
 class TowerEconomics:
     """Assumptions (USD). Sources: truck rolls from Power Factors' break-even guide; the rest are placeholders
-    to replace with Janta's price book."""
+    to replace with a real price book."""
 
     energy_usd_per_kwh: float = 0.11  # Texas commercial energy value (assumption)
     truck_roll_local: float = 125.0  # Power Factors: local visit
@@ -44,7 +44,7 @@ class TowerEconomics:
 
 
 @lru_cache(maxsize=2)
-def energy_table(path: str = str(DATA / "tr08_dallas_daily_kwh.csv")) -> pd.DataFrame:
+def energy_table(path: str = str(DATA / "tower_dallas_daily_kwh.csv")) -> pd.DataFrame:
     df = pd.read_csv(path, index_col=0, parse_dates=True)
     return df
 

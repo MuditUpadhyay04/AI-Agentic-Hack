@@ -1,12 +1,10 @@
-"""Light and energy on a Janta tower face that points at any azimuth.
+"""Light and energy on a solar tower face that points at any azimuth.
 
-This mirrors the Shadow Calculator's field model (``janta_shade.solar.field_poa``: two wings, Perez sky,
-SAPM cell temperature, other-losses factor) with one change: the face azimuth is an input instead of
-always the sun's azimuth. That lets PitCrew price "park the tower at 195 deg" or "track in 15 deg steps"
-against normal tracking. ``tests/test_solar_face.py`` checks it equals the engine's own tracking result.
+A two-wing field model (Perez sky, SAPM cell temperature, other-losses factor) where the face azimuth is
+an input instead of always the sun's azimuth. That lets PitCrew price "park the tower at 195 deg" or "track in 15 deg steps"
+against normal tracking.
 
-Only pvlib, numpy and pandas are needed, so the hackathon account can regenerate tables without the
-Janta engine. The table shipped in ``data/`` was produced by ``scripts/export_energy_table.py``.
+Only pvlib, numpy and pandas are needed. The table shipped in ``data/`` was produced by ``scripts/export_energy_table.py``.
 """
 from __future__ import annotations
 
@@ -19,18 +17,18 @@ import pvlib
 
 @dataclass(frozen=True)
 class TowerFace:
-    """A tower's panel face: two wings each turned ``fold_deg`` off the centre line (TR-08: 60 deg tilt, 20 deg)."""
+    """A tower's panel face: two wings each turned ``fold_deg`` off the centre line (ST-1: 60 deg tilt, 20 deg)."""
 
-    rated_kw: float = 3.56  # 8 x Canadian Solar CS6.2-48TM-H 445 W (Janta's default module)
+    rated_kw: float = 3.56  # 8 x 445 W modules (placeholder)
     tilt_deg: float = 60.0
     fold_deg: float = 20.0
     temp_coeff_per_c: float = -0.003
     sapm: tuple = ("open_rack", "glass_polymer")
-    other_losses_factor: float = 0.90  # fitted to the DFW tower (Shadow Calculator docs/VALIDATION.md)
+    other_losses_factor: float = 0.90  # placeholder
     albedo: float = 0.2
 
     def wings(self) -> tuple:
-        """((tilt, azimuth offset, share), ...) exactly as janta_shade.solar.wing_faces."""
+        """((tilt, azimuth offset, share), ...) for each wing."""
         if self.fold_deg <= 0:
             return ((float(self.tilt_deg), 0.0, 1.0),)
         t, f = np.radians(self.tilt_deg), np.radians(self.fold_deg)

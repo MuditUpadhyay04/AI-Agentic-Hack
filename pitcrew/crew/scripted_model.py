@@ -19,13 +19,15 @@ CALLS = {
     "Diagnostician": lambda task: ([("search_manual", {"query": "tool change insert wear shift"})] if "VM-07" in task
                                    else [("diagnose_tower", {"tower_id": _tid(task)}),
                                          ("search_manual", {"query": "re-grease seals",
-                                                            "manual": "janta_tower_drive_public.md"})]),
+                                                            "manual": "tower_drive_manual.md"})]),
     "Race Engineer": lambda task: ([("price_mill_options", {})] if "VM-07" in task
                                    else [("price_tower_options", {"tower_id": _tid(task)})]),
     "Quartermaster": lambda task: [("check_stock", {"pn": "INSERT-CNMG-L" if "VM-07" in task else "GREASE-KIT-SD"})],
     "Dispatcher": lambda task: [("next_route_day", {})],
     "Kaizen": lambda task: [("kaizen_lots", {}), ("tracking_tradeoff", {})],
     "Onboarder": lambda task: [("onboard_manual", {"manual": "lathe_l2_manual.md"})],
+    "Sourcing": lambda task: [("job_queue", {}), ("fulfil_job", {"job_id": "CUR-007"}),
+                              ("restock_local_hubs", {"pn": "PN-2210"}), ("plan_central_order", {"pn": "PN-2210"})],
 }
 
 

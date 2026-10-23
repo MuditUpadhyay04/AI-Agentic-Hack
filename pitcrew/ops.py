@@ -113,7 +113,7 @@ class Ops:
             Part("GREASE-KIT-SD", "Slew-drive re-grease kit (EP2 grease, fittings)", 40.0, 12, 6, 24, "DriveParts TX"),
             Part("SEAL-KIT-SD", "Slew-drive seal kit", 65.0, 3, 4, 10, "DriveParts TX"),
             Part("BOLT-KIT-SD", "Drive mounting bolt kit (M16)", 25.0, 9, 4, 10, "DriveParts TX"),
-            Part("DRIVE-WSD14", "Worm slew drive, 14 in class (TR-08)", 1200.0, 1, 2, 4, "Lot-A Supplier"),
+            Part("DRIVE-WSD14", "Worm slew drive, 14 in class (ST-1)", 1200.0, 1, 2, 4, "Lot-A Supplier"),
         ]}
         self.quotes = {
             "DRIVE-WSD14": [

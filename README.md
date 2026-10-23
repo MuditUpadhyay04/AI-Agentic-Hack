@@ -3,19 +3,19 @@
 An agent crew for the Austin Agentic AI Hackathon, Track 2 (Autonomic Shop Floor & Predictive Maintenance).
 It watches machines, **buys time** when a failure wall is close, orders the part, books the technician — and
 turns every repair into a better next machine. Proven on the organisers' data (AI4I 2020 mill), then
-pointed at Janta Power's own TR-08 solar towers.
+pointed at a fleet of solar towers.
 
 | Loop | Cadence | What the crew does | Where to see it |
 |---|---|---|---|
-| **Run** | minutes | Sentinel → Diagnostician → Race Engineer → *Foreman approves* → Quartermaster → Dispatcher | `Run · Mill`, `Run · Janta towers` |
-| **Improve** | weekly | Kaizen: rules found in data, supplier-lot rates, Sensor Futures, TR-09 design-change request | `Improve` |
+| **Run** | minutes | Sentinel → Diagnostician → Race Engineer → *Foreman approves* → Quartermaster → Dispatcher | `Run · Mill`, `Run · Towers` |
+| **Improve** | weekly | Kaizen: rules found in data, supplier-lot rates, Sensor Futures, ST-2 design-change request | `Improve` |
 | **Grow** | per machine / sensor / supplier | Onboarder: manual → asset passport with **future hardware slots** → human signs → agents start | `Grow` |
 
 ## Quick start (no AWS needed)
 
 ```bash
 pip install -r requirements.txt          # Python 3.10+
-python -m pytest -q                      # 25 tests, ~20 s
+python -m pytest -q                      # 32 tests, ~50 s
 python scripts/run_demo.py               # the whole story in the terminal
 shiny run app/app.py --port 8000         # the operator console -> http://localhost:8000
 ```
@@ -40,7 +40,7 @@ See [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md). Short version:
    options and recommends **Lift & Coast: 1,400 rpm, feed cut to 47 Nm** — nearest wall 36 parts away vs 30
    to shift change, 8% headroom kept — $4,141 expected vs $4,542 to stop now vs $24,742 to run as-is.
    Approve → setpoint written, insert reserved, PO auto-approved under policy, work order at shift change.
-2. **Run · Janta towers.** 8 of 48 towers flagged. Tower 7 (supplier lot B grease): +33% energy per degree;
+2. **Run · Towers.** 8 of 48 towers flagged. Tower 7 (supplier lot B grease): +33% energy per degree;
    66% chance of a stall in wind before Thursday's route. **Park & Price** recommends parking at 180° until
    the visit: $3 of energy instead of a ~$2,456 failure. Six more towers batched on the same truck roll.
 3. **Improve.** Kaizen finds the AI4I overstrain wall from data (precision 1.00, recall 0.98), lot B failing
@@ -57,17 +57,16 @@ See [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md). Short version:
   8.6 K, tool wear 200–240 min. `pitcrew/mill.py`, checked in `tests/test_mill.py`.
 - **AI4I data**: `python scripts/fetch_data.py` downloads the real file. Without internet PitCrew builds a
   seeded replica from the same published rules and labels every result with its source.
-- **Tower energy** comes from the Janta Shadow Calculator's field model (two wings, Perez sky, SAPM cell
-  temperature, 0.90 losses fitted to the DFW tower). `scripts/export_energy_table.py --check-engine` matched
-  the engine's tracking result to **0.000%**. Clear sky (an upper bound); rerun on Janta's server with the
-  PVGIS typical year for the real table. Late October: parking at 180° gives up ~20% of a day's energy.
+- **Tower energy** comes from a two-wing field model (`pitcrew/solar_face.py`: Perez sky, SAPM cell
+  temperature, placeholder 0.90 other losses), exported by `scripts/export_energy_table.py`. Clear sky (an
+  upper bound); rerun with a typical-year weather file for the real table. Late October: parking at 180° gives up ~20% of a day's energy.
 - **Tower drive model** (`pitcrew/tower.py`) is a simulation with every coefficient in `DriveModel`:
   grease ageing (time, heat, churn per start, faster for lot B, steps after seal leaks), friction → energy
   per degree, wind load, stall when friction + gust exceed the motor, backlash growth (per start and per
   degree, faster on poor grease), IMS-shaped bearing defects. Signatures follow the field literature
   (rising drive current US11588425; reversal dead zone US10498193). Replace with field data as it arrives.
 - **Prices** are assumptions on the approval card (`MillEconomics`, `TowerEconomics`): truck rolls from
-  Power Factors ($125 local, $400 regional); the rest are placeholders for Janta's price book.
+  Power Factors ($125 local, $400 regional); the rest are placeholders.
 
 ## AWS
 
@@ -98,7 +97,7 @@ tests/            pytest suite
 
 ## Rules kept
 
-- Nothing proprietary in this repo: the FGA14 datasheet is not here; the tower manual is a public-safe
-  summary with class-typical values; only *derived* energy numbers came from the Shadow Calculator.
+- Nothing proprietary in this repo: no vendor datasheets; the tower manual is a public-safe summary with
+  class-typical values; tower ratings and prices are placeholders.
 - No number is typed by a model: every figure on an approval card comes from a tool result in the trace.
 - Hackathon prototype, not a control system: setpoint "writes" change simulated state only.

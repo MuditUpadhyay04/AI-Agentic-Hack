@@ -189,7 +189,7 @@ def energy_window(daily: pd.DataFrame, start, days: int, park_az: int) -> plt.Fi
     ax.plot(idx, sub[f"park_{park_az:03d}"], color=WARN, lw=2, label=f"parked at {park_az} deg")
     ax.set_ylabel("kWh per tower per day")
     ax.legend(frameon=False, fontsize=8.5, loc="lower left")
-    ax.set_title("Energy per option (Shadow Calculator field model, TR-08, Dallas, clear sky)")
+    ax.set_title("Energy per option (field energy model, ST-1, Dallas, clear sky)")
     fig.autofmt_xdate()
     return fig
 

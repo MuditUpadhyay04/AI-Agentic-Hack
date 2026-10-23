@@ -10,7 +10,7 @@ expects; swap the placeholder body for the real call and the screens pick it up 
     Priority queue (console)  queue                          real: merges the three loops (idea.md section 6)
 
 Every placeholder result carries ``source="placeholder"`` so the screens can label it. Names, prices,
-hubs and lifetimes are placeholders, not Janta values.
+hubs and lifetimes are placeholders, not real company values.
 """
 from __future__ import annotations
 

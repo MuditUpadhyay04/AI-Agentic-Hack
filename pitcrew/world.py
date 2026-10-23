@@ -6,9 +6,11 @@ recorded in ``World.trace`` so the console can show which agent called what, wit
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import re
 import time
+from dataclasses import asdict
 from functools import cached_property
 from pathlib import Path
 
@@ -20,6 +22,7 @@ from .futures import ranking
 from .kaizen import design_change_request, lot_analysis, rediscover_ai4i, time_to_alarm_by_lot, tracking_tradeoff
 from .ops import ALERT_POLICY, Ops, policy_check
 from .passport import MANUALS, from_manual, install_slot, manuals, sign
+from .sourcing import Network, demo_network, rank
 from .tower import Fleet
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +44,8 @@ def _clean(x):
         return int(x)
     if isinstance(x, (np.bool_,)):
         return bool(x)
+    if type(x) is dt.date:  # plain dates only: leave pandas Timestamps as they were
+        return x.isoformat()
     return x
 
 
@@ -61,6 +66,10 @@ class World:
     @cached_property
     def fleet(self) -> Fleet:
         return Fleet(seed=self.seed).run()
+
+    @cached_property
+    def network(self) -> Network:
+        return demo_network()
 
     # ------------------------------------------------------------------ trace
     def _rec(self, tool: str, args: dict, result):
@@ -192,6 +201,30 @@ class World:
         a.update(status="escalated", escalated=True, escalated_at=time.strftime("%H:%M:%S"))
         return self._rec("escalate_alert", {"id": alert_id}, a)
 
+    # ------------------------------------------------------------------ sourcing (hubs + vendors)
+    def job_queue(self) -> dict:
+        jobs = [{"rank": i + 1, **asdict(j)} for i, j in enumerate(rank(self.network.jobs))]
+        return self._rec("job_queue", {}, {"jobs": jobs, "today": self.network.today.isoformat()})
+
+    def hub_stock(self, pn: str) -> dict:
+        return self._rec("hub_stock", {"pn": pn}, self.network.hub_stock(pn))
+
+    def fulfil_job(self, job_id: str) -> dict:
+        job = next((j for j in self.network.jobs if j.job_id == job_id), None)
+        if job is None:
+            return self._rec("fulfil_job", {"job_id": job_id}, {"error": f"no job {job_id}"})
+        return self._rec("fulfil_job", {"job_id": job_id}, self.network.fulfil(job))
+
+    def restock_local_hubs(self, pn: str) -> dict:
+        return self._rec("restock_local_hubs", {"pn": pn}, self.network.restock_local_hubs(pn))
+
+    def plan_central_order(self, pn: str) -> dict:
+        return self._rec("plan_central_order", {"pn": pn}, self.network.central_plan(pn))
+
+    def place_order(self, pn: str, vendor: str, qty: int) -> dict:
+        return self._rec("place_order", {"pn": pn, "vendor": vendor, "qty": qty},
+                         self.network.place_order(pn, vendor, qty))
+
     # ------------------------------------------------------------------ improve
     def kaizen_rules(self) -> dict:
         return self._rec("kaizen_rules", {}, rediscover_ai4i())
@@ -238,7 +271,7 @@ class World:
         p = install_slot(self.passports[asset_id], signal_keyword)
         self.passports[asset_id] = p
         unlocked = [d for s in p["slots"] if s["status"] == "installed" for d in s["unlocks"]]
-        if asset_id.startswith("TR-08"):
+        if asset_id.startswith("ST-1"):
             self.installed_slots = tuple(sorted(set(self.installed_slots) | set(unlocked)))
         return self._rec("install_slot", {"asset_id": asset_id, "slot": signal_keyword},
                          {"asset_id": asset_id, "detectors_live": unlocked})

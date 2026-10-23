@@ -42,6 +42,15 @@ PROMPTS = {
               "hardware worth adding; draft the design-change request. " + RULES,
     "Onboarder": "You are the Onboarder (Grow). Read the manual into a passport, report its walls, live "
                  "signals and future hardware slots, and ask a human to sign. " + RULES,
+    "Sourcing": "You are the Sourcing agent (Supply). Every job in the priority queue names a part number and a "
+                "customer site; get the part there first, then keep the hubs stocked. Work in this order: "
+                "(1) read the job queue; (2) for each open cure job, then each open prevention job, call "
+                "fulfil_job (it tries the site's local hub, then the central hub, then another local hub, then "
+                "buys); (3) for every part you moved, call restock_local_hubs; (4) for every part you moved, call "
+                "plan_central_order and, if a purchase is needed, place_order with the plan's pick and quantity. "
+                "Only verified vendors; never pay for speed the need-by date doesn't require. Report what went "
+                "where, what you bought from whom, the cheapest-in-time vs fastest trade-off, and anything that "
+                "waits for a planner's approval. " + RULES,
 }
 
 
@@ -62,7 +71,7 @@ def tools_for(w: World) -> dict:
 
     @tool
     def search_manual(query: str, manual: str = "vm07_mill_manual.md") -> dict:
-        """Search an equipment manual (vm07_mill_manual.md or janta_tower_drive_public.md) for lines about query."""
+        """Search an equipment manual (vm07_mill_manual.md or tower_drive_manual.md) for lines about query."""
         return w.search_manual(query, manual)
 
     @tool
@@ -72,7 +81,7 @@ def tools_for(w: World) -> dict:
 
     @tool
     def fleet_overview() -> dict:
-        """Which Janta towers are flagged today, by which sensor."""
+        """Which solar towers are flagged today, by which sensor."""
         return w.fleet_overview()
 
     @tool
@@ -127,7 +136,7 @@ def tools_for(w: World) -> dict:
 
     @tool
     def tracking_tradeoff() -> dict:
-        """Energy given up by step tracking (Shadow Calculator field model) vs drive starts saved."""
+        """Energy given up by step tracking (field energy model) vs drive starts saved."""
         return w.tracking_tradeoff()
 
     @tool
@@ -137,13 +146,43 @@ def tools_for(w: World) -> dict:
 
     @tool
     def design_change_request() -> dict:
-        """Draft the TR-09 design-change request from the fleet evidence."""
+        """Draft the ST-2 design-change request from the fleet evidence."""
         return w.design_change_request()
 
     @tool
     def onboard_manual(manual: str) -> dict:
         """Read a manual into an asset passport (walls, signals, future hardware slots, parts)."""
         return w.onboard_manual(manual)
+
+    @tool
+    def job_queue() -> dict:
+        """The priority queue: every job with rank, kind (cure/prevention/maintenance), part number, site, due date."""
+        return w.job_queue()
+
+    @tool
+    def hub_stock(pn: str) -> dict:
+        """Stock of one part number at the central hub and every local hub, with reorder levels and targets."""
+        return w.hub_stock(pn)
+
+    @tool
+    def fulfil_job(job_id: str) -> dict:
+        """Get a job's part to its site: local hub, else central hub, else another local hub, else buy."""
+        return w.fulfil_job(job_id)
+
+    @tool
+    def restock_local_hubs(pn: str) -> dict:
+        """Refill local hubs at or below their reorder level from the central hub; says if the central hub is low."""
+        return w.restock_local_hubs(pn)
+
+    @tool
+    def plan_central_order(pn: str) -> dict:
+        """Whether the central hub needs a purchase, how many, need-by date, cheapest-in-time vs fastest vendor."""
+        return w.plan_central_order(pn)
+
+    @tool
+    def place_order(pn: str, vendor: str, qty: int) -> dict:
+        """Raise a PO with a verified vendor. Policy auto-approves up to the limit; above it a planner approves."""
+        return w.place_order(pn, vendor, qty)
 
     return {
         "Sentinel": [read_mill, fleet_overview],
@@ -153,6 +192,7 @@ def tools_for(w: World) -> dict:
         "Dispatcher": [next_route_day, create_work_order],
         "Kaizen": [kaizen_rules, kaizen_lots, tracking_tradeoff, sensor_futures, design_change_request],
         "Onboarder": [onboard_manual],
+        "Sourcing": [job_queue, hub_stock, fulfil_job, restock_local_hubs, plan_central_order, place_order],
     }
 
 
@@ -242,6 +282,14 @@ def execute(w: World, plan_out: dict, who: str = "Foreman", model=None) -> dict:
     res = _graph(agents, names)(task)
     turns = [{"agent": "Foreman", "stage": "Human", "say": f"Approved: {rec['title']}.", "tools": []}]
     return {"turns": turns + _turns(w, res, names, start), "work_order": _last(w, "create_work_order")}
+
+
+def sourcing(w: World, model=None) -> dict:
+    """The Sourcing agent on Bedrock; plans and POs are read back from the tools, not from model text."""
+    out = single(w, "Sourcing", "Work the priority queue: get urgent parts on site, then restock the hubs.", model)
+    out.update(plans=[t["result"] for t in w.trace if t["tool"] == "plan_central_order" and t["result"].get("needed")],
+               pos=list(w.network.pos), moves=list(w.network.moves))
+    return out
 
 
 def single(w: World, name: str, task: str, model=None) -> dict:
